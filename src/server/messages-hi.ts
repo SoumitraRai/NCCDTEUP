@@ -14,6 +14,8 @@ const exact: Record<string, string> = {
   "Cadets cannot create bills.": "कैडेट बिल नहीं बना सकते।",
   "Cadets cannot create staff claims.": "कैडेट स्टाफ़ दावे नहीं बना सकते।",
   "Cannot change your own privileges.": "आप अपने स्वयं के अधिकार नहीं बदल सकते।",
+  "The return must be after the start.": "वापसी प्रस्थान के बाद होनी चाहिए।",
+  "Request temporary duty at least 2 days ahead.": "अस्थायी ड्यूटी का अनुरोध कम से कम 2 दिन पहले करें।",
   "You cannot end or move your own post.": "आप अपना स्वयं का पद समाप्त या स्थानांतरित नहीं कर सकते।",
   "You cannot change this officer's post.": "आप इस अधिकारी का पद नहीं बदल सकते।",
   "You cannot appoint to this post.": "आप इस पद पर नियुक्ति नहीं कर सकते।",
