@@ -200,23 +200,28 @@ export async function decideOfficerRequest(actor: Actor, id: string, raw: unknow
     { isolationLevel: "Serializable" },
   );
 }
-// Heads (Gp Cdr, DDG, ADG) give or withdraw the duty of approving officer
-// registrations to officers of their own formation. It cannot be passed on.
-export async function setRegistrationDuty(actor: Actor, assignmentId: string, raw: unknown) {
-  const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(raw);
+// Heads (Gp Cdr, DDG, ADG) give or withdraw a duty to officers of their own
+// formation; it cannot be passed on. "registrations": approve officer
+// registrations. "movement": the Branch step of temporary duty, for
+// directorate officers only, given by the DDG or ADG.
+export const DUTIES = [DUTY, "movement"] as const;
+export async function setDuty(actor: Actor, assignmentId: string, raw: unknown) {
+  const { duty, enabled } = z.object({ duty: z.enum(DUTIES).default(DUTY), enabled: z.boolean() }).strict().parse(raw);
   const target = await db.roleAssignment.findUnique({ where: { id: assignmentId }, include: assignmentInclude });
   if (!target || !target.active) throw new AppError(404, "Officer not found.");
   if (target.userId === actor.id) throw new AppError(403, "Cannot change your own privileges.");
+  if (duty === "movement" && target.level !== "DIRECTORATE") throw new AppError(400, "This duty is for directorate officers.");
   const t = toAssignment(target);
   const heads = await headPosts();
   const sameFormation = (a: Assignment) =>
     a.level === t.level && (t.level === "GROUP" ? a.anchor.groupId === t.anchor.groupId : t.level === "DIRECTORATE" && a.anchor.directorateId === t.anchor.directorateId);
   if (!["GROUP", "DIRECTORATE"].includes(t.level) || !actor.assignments.some((a) => a.appointmentCode && heads.has(a.appointmentCode) && sameFormation(a)))
     throw new AppError(403, "Only the head of this formation can change this duty.");
-  const capabilities = enabled ? [...new Set([...target.capabilities, DUTY])] : target.capabilities.filter((c) => c !== DUTY);
+  const capabilities = enabled ? [...new Set([...target.capabilities, duty])] : target.capabilities.filter((c) => c !== duty);
   await db.$transaction(async (tx) => {
     await tx.roleAssignment.update({ where: { id: assignmentId }, data: { capabilities } });
-    await audit(tx, actor.id, enabled ? "duty.registrations.granted" : "duty.registrations.withdrawn", assignmentId, { userId: target.userId });
+    await audit(tx, actor.id, `duty.${duty}.${enabled ? "granted" : "withdrawn"}`, assignmentId, { userId: target.userId });
   });
-  return { id: assignmentId, duty: enabled };
+  return { id: assignmentId, duty, enabled };
 }
+export const setRegistrationDuty = (actor: Actor, assignmentId: string, raw: unknown) => setDuty(actor, assignmentId, raw);

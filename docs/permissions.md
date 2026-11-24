@@ -41,6 +41,10 @@ Officers register on `/[locale]/officers/register` (linked from the member regis
 
 Ending or moving an officer's post (Officers page, "Change post") follows the same rule: whoever may approve a post's registration may end it, or move the officer to a new post that they could also approve. A move keeps the account, closes the old post and opens the new one at the same moment; delegated duties do not carry over. Nobody ends or moves their own post; DDG and ADG are handed over on the Directorate posts page. A reason is required and every change is audited (`officer.post.ended`, `officer.post.moved`).
 
+## Temporary duty branch
+
+The DDG or ADG gives or withdraws the `movement` duty for directorate officers on the Officers page ("TD branch"). Its holders act at the Branch step of a temporary duty request. It cannot be given on one's own post, by a duty holder, or to a group or unit officer.
+
 ## DDG and ADG post accounts
 
 These posts are closed to registration. A directorate admin (role `ADMIN`) sets up the account on the Directorate posts page and, when the holder changes, updates name, email and phone. A handover deletes the old password, authenticator and sessions and creates a one-time set-password link (24 hours, hash stored). With email verification on it is emailed to the new address; otherwise (the default) it is shown once to the admin to hand over in person. Nobody sets up or hands over the post they hold. Every set-up and handover is audited with the previous holder's name and email.

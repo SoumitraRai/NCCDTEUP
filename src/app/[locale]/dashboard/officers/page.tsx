@@ -19,6 +19,8 @@ export default async function Officers({ params, searchParams }: PageProps<"/[lo
   const list = await listOfficers(actor, parseList({ ...sp, pageSize: "25" }));
   const managing = list.rows.find((o) => o.id === sp.manage && o.canManage);
   const targets = managing ? await moveTargets(actor, managing.id) : null;
+  // Only the DDG and ADG manage the movement duty, so only they see the column.
+  const movementColumn = list.rows.some((o) => o.canDelegateMovement);
   return (
     <div className="space-y-6">
       <div>
@@ -46,6 +48,7 @@ export default async function Officers({ params, searchParams }: PageProps<"/[lo
                   <th className="px-5 py-2.5 font-medium">{t.formation}</th>
                   <th className="px-5 py-2.5 font-medium">{t.since}</th>
                   <th className="px-5 py-2.5 font-medium">{t.duty}</th>
+                  {movementColumn && <th className="px-5 py-2.5 font-medium">{t.movementDuty}</th>}
                   <th className="px-5 py-2.5"><span className="sr-only">{t.change}</span></th>
                 </tr>
               </thead>
@@ -62,10 +65,15 @@ export default async function Officers({ params, searchParams }: PageProps<"/[lo
                     <td className="px-5 py-3">
                       {o.head ? t.headDuty : o.canDelegate ? <DutyToggle id={o.id} name={o.name} on={o.duty} /> : o.duty ? "✓" : "—"}
                     </td>
+                    {movementColumn && (
+                      <td className="px-5 py-3">
+                        {o.canDelegateMovement ? <DutyToggle id={o.id} name={o.name} on={o.movement} duty="movement" /> : o.movement ? "✓" : "—"}
+                      </td>
+                    )}
                     <td className="px-5 py-3 text-right">
                       {o.canManage && (
                         <ButtonLink query={{ manage: o.id, changed: null }}>
-                          {t.change}<span className="sr-only">: {o.name}</span>
+                          <span className="whitespace-nowrap">{t.change}</span><span className="sr-only">: {o.name}</span>
                         </ButtonLink>
                       )}
                     </td>

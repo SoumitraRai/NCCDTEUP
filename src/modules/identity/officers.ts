@@ -56,6 +56,8 @@ export async function listOfficers(actor: Actor, q: ListQuery) {
   const canDelegate = (r: { level: string; groupId: string | null; directorateId: string | null; userId: string }) =>
     r.userId !== actor.id &&
     leads.some((a) => a.level === r.level && ((r.level === "GROUP" && a.anchor.groupId === r.groupId) || (r.level === "DIRECTORATE" && a.anchor.directorateId === r.directorateId)));
+  // The movement duty (TD Branch step) is for directorate officers only.
+  const canDelegateMovement = (r: { level: string; groupId: string | null; directorateId: string | null; userId: string }) => r.level === "DIRECTORATE" && canDelegate(r);
   const manages = await postManager(actor);
   return page(
     rows.map((r) => ({
@@ -68,6 +70,8 @@ export async function listOfficers(actor: Actor, q: ListQuery) {
           : { unitId: null, groupId: r.groupId, directorateId: r.group?.directorateId ?? r.directorateId! },
       }),
       duty: r.capabilities.includes("registrations"),
+      movement: r.capabilities.includes("movement"),
+      canDelegateMovement: canDelegateMovement({ level: r.level, groupId: r.groupId, directorateId: r.directorateId, userId: r.user.id }),
       // Group and directorate heads approve officer registrations; unit heads do not.
       head: !!r.appointmentCode && heads.has(r.appointmentCode) && r.level !== "UNIT",
       canDelegate: canDelegate({ level: r.level, groupId: r.groupId, directorateId: r.directorateId, userId: r.user.id }),
