@@ -422,9 +422,19 @@ model ApprovalRequest {
   id String @id @default(cuid())
   workflow String
   resourceId String
-  institutionId String
+  // The formation the request belongs to, filled in up the chain (a unit
+  // request also carries its group and directorate). Bills use INSTITUTION.
+  level String @default("INSTITUTION")
+  institutionId String?
+  unitId String?
+  groupId String?
+  directorateId String?
   requesterId String
+  // Who travels or benefits, when not the requester; never decides.
+  travellerId String?
   routeVersion Int
+  // First stage of the chain for this request; returns restart here.
+  startIndex Int @default(0)
   stageIndex Int @default(0)
   cycle Int @default(1)
   status ApprovalStatus @default(PENDING)
@@ -435,6 +445,8 @@ model ApprovalRequest {
   @@unique([workflow,resourceId])
   @@index([status,stageIndex])
   @@index([institutionId,status])
+  @@index([groupId,status])
+  @@index([directorateId,status])
 }
 model ApprovalStep {
   id String @id @default(cuid())

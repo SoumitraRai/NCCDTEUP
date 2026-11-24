@@ -8,7 +8,7 @@ import {
   type Actor,
 } from "@/server/authorization";
 import { audit } from "@/modules/audit";
-import { cancelRequest, decide, openRequest } from "@/modules/approvals/engine";
+import { cancelRequest, decide, institutionChain, openRequest } from "@/modules/approvals/engine";
 import { calculate, claimInput, paymentBalance } from "./calculation";
 export async function createClaim(actor: Actor, raw: unknown) {
   const input = claimInput.parse(raw);
@@ -169,7 +169,7 @@ export async function transitionClaim(actor: Actor, raw: unknown) {
         const request = await openRequest(tx, {
           workflow: "BILL",
           resourceId: claim.id,
-          institutionId: claim.institutionId,
+          chain: await institutionChain(tx, claim.institutionId),
           requesterId: actor.id,
         });
         next = request.stageIndex > 0 ? "UNDER_REVIEW" : "SUBMITTED";
