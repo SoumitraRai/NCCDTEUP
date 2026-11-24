@@ -14,6 +14,24 @@ const exact: Record<string, string> = {
   "Cadets cannot create bills.": "कैडेट बिल नहीं बना सकते।",
   "Cadets cannot create staff claims.": "कैडेट स्टाफ़ दावे नहीं बना सकते।",
   "Cannot change your own privileges.": "आप अपने स्वयं के अधिकार नहीं बदल सकते।",
+  "Choose the date.": "तारीख चुनें।",
+  "Enter where the duty starts from.": "ड्यूटी कहाँ से शुरू होगी, लिखें।",
+  "Enter where the duty is.": "ड्यूटी का स्थान लिखें।",
+  "Keep the place under 120 characters.": "स्थान 120 अक्षरों से कम रखें।",
+  "Enter the purpose.": "उद्देश्य लिखें।",
+  "Keep the purpose under 500 characters.": "उद्देश्य 500 अक्षरों से कम रखें।",
+  "Enter the traveller's name.": "यात्री का नाम लिखें।",
+  "Enter the traveller's rank.": "यात्री का रैंक लिखें।",
+  "Keep the rank under 40 characters.": "रैंक 40 अक्षरों से कम रखें।",
+  "Choose one of your posts.": "अपना एक पद चुनें।",
+  "Only officers can send someone on temporary duty.": "केवल अधिकारी किसी को अस्थायी ड्यूटी पर भेज सकते हैं।",
+  "Choose someone in your formation.": "अपनी संरचना में से किसी को चुनें।",
+  "For your own temporary duty, choose For myself.": "अपनी अस्थायी ड्यूटी के लिए \"अपने लिए\" चुनें।",
+  "Choose a unit, group or directorate under you.": "अपने अधीन की यूनिट, ग्रुप या निदेशालय चुनें।",
+  "TD not found.": "टीडी नहीं मिली।",
+  "Only the person who created this TD can change it.": "इस टीडी को केवल इसे बनाने वाले बदल सकते हैं।",
+  "This TD changed. Refresh and try again.": "यह टीडी बदल गई है। पेज रीफ़्रेश करके फिर प्रयास करें।",
+  "Only a returned TD can be edited.": "केवल वापस की गई टीडी बदली जा सकती है।",
   "This duty is for directorate officers.": "यह कार्य निदेशालय अधिकारियों के लिए है।",
   "The return must be after the start.": "वापसी प्रस्थान के बाद होनी चाहिए।",
   "Request temporary duty at least 2 days ahead.": "अस्थायी ड्यूटी का अनुरोध कम से कम 2 दिन पहले करें।",
@@ -110,7 +128,15 @@ const exact: Record<string, string> = {
   "The email address has not been confirmed yet.": "ईमेल पते की अभी पुष्टि नहीं हुई है।",
 };
 const what: Record<string, string> = { latitude: "अक्षांश", longitude: "देशांतर" };
-const stage = (title: string) => ({ "Commanding Officer": "कमांडिंग ऑफिसर", "Group Commander": "ग्रुप कमांडर" })[title] ?? title;
+const stages: Record<string, string> = {
+  "Commanding Officer": "कमांडिंग ऑफिसर",
+  "Group Commander": "ग्रुप कमांडर",
+  Branch: "शाखा",
+  Director: "निदेशक",
+  "Deputy Director General": "उप महानिदेशक",
+  "Additional Director General": "अपर महानिदेशक",
+};
+const stage = (title: string) => stages[title] ?? title;
 const decision: Record<string, string> = { review: "अनुशंसा", "not recommend": "अनुशंसा से इनकार", approve: "स्वीकृति", return: "वापसी", reject: "अस्वीकृति" };
 const patterns: [RegExp, (...m: string[]) => string][] = [
   [/^Enter the (latitude|longitude) as a number\.$/, (w) => `${what[w]} संख्या में लिखें।`],

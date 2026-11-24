@@ -11,6 +11,8 @@ describe("server messages in Hindi", () => {
     expect(toHindi("Something new.")).toBe("Something new.");
     expect(toHindi("This step awaits the Group Commander.")).toBe("यह चरण ग्रुप कमांडर की प्रतीक्षा में है।");
     expect(toHindi("The Commanding Officer cannot approve at this step.")).toBe("कमांडिंग ऑफिसर इस चरण पर स्वीकृति नहीं कर सकते।");
+    expect(toHindi("This step awaits the Director.")).toBe("यह चरण निदेशक की प्रतीक्षा में है।");
+    expect(toHindi("Only the person who created this TD can change it.")).toBe("इस टीडी को केवल इसे बनाने वाले बदल सकते हैं।");
   });
   it("answers in the requested language and keeps the status", async () => {
     const hi = failure(new AppError(403, "Not permitted."), "hi");

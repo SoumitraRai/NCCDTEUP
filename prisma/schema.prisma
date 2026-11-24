@@ -507,8 +507,59 @@ model Notification {
   id String @id @default(cuid())
   userId String
   message String
+  // The record the notice is about, and where the dashboard opens it.
+  resourceId String?
+  link String?
   readAt DateTime?
   createdAt DateTime @default(now())
+  @@index([userId,readAt])
+}
+// Temporary duty (docs/superpowers/specs/2026-11-24-movement-td-design.md).
+// The traveller has an account (travellerId) or is typed in by name and rank.
+// Belongs to the traveller's unit, group or directorate, filled in up the chain.
+model TdRequest {
+  id String @id @default(cuid())
+  createdById String
+  travellerId String?
+  travellerName String
+  travellerRank String @default("")
+  travellerPost String @default("")
+  // OWN (the creator travels) or SENT (a senior sends someone).
+  kind String
+  level String
+  unitId String?
+  groupId String?
+  directorateId String
+  fromPlace String
+  toPlace String
+  startDate DateTime @db.Date
+  startHalf String
+  endDate DateTime @db.Date
+  endHalf String
+  halfDays Int
+  purpose String
+  ownArrangement Boolean @default(false)
+  // PENDING, RETURNED, APPROVED, REJECTED or CANCELLED, copied from the approval request.
+  status String @default("PENDING")
+  version Int @default(1)
+  submissions TdSubmission[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status,endDate])
+  @@index([groupId])
+  @@index([directorateId])
+  @@index([createdById])
+  @@index([travellerId])
+}
+// What was sent up the chain in each cycle; never changed afterwards.
+model TdSubmission {
+  id String @id @default(cuid())
+  tdId String
+  td TdRequest @relation(fields:[tdId],references:[id],onDelete:Cascade)
+  cycle Int
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@unique([tdId,cycle])
 }
 model NotificationPreference {
   userId String @id
