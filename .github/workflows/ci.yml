@@ -1,0 +1,43 @@
+name: Verify Sampark
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: sampark
+          POSTGRES_PASSWORD: sampark_local_only
+          POSTGRES_DB: sampark
+        ports: ["5439:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sampark"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://sampark:sampark_local_only@localhost:5439/sampark
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: synthetic-ci-only-secret-not-for-production-2026
+      APP_MODE: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate && npm run db:migrate && npm run db:seed
+      - run: npm run typecheck && npm run lint && npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm start > /tmp/sampark-server.log 2>&1 &
+      - run: node scripts/wait-health.mjs
+      - run: npm run test:e2e
+      - run: npm audit --audit-level=moderate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence
+          path: |
+            playwright-report
+            test-results

@@ -1,0 +1,592 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+model User {
+  id String @id
+  name String
+  email String @unique
+  emailVerified Boolean @default(false)
+  image String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  active Boolean @default(true)
+  twoFactorEnabled Boolean @default(false)
+  // Set for officer accounts: no private access until TOTP is enrolled.
+  requireTwoFactor Boolean @default(false)
+  // Official phone for post accounts (DDG, ADG), encrypted like other mobiles.
+  phoneEnc String?
+  autoRecommend Boolean @default(false)
+  sessions Session[]
+  accounts Account[]
+  assignments RoleAssignment[]
+  twoFactors TwoFactor[]
+}
+model Session {
+  lastSeenAt DateTime @default(now())
+  id String @id
+  expiresAt DateTime
+  token String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@index([userId])
+}
+model Account {
+  id String @id
+  accountId String
+  providerId String
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  accessToken String?
+  refreshToken String?
+  idToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope String?
+  password String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId])
+}
+model Verification {
+  id String @id
+  identifier String
+  value String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([identifier])
+}
+model TwoFactor {
+  verified Boolean @default(true)
+  failedVerificationCount Int @default(0)
+  lockedUntil DateTime?
+  id String @id
+  secret String
+  backupCodes String
+  userId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@index([userId])
+}
+model Directorate {
+  id String @id @default(cuid())
+  name String
+  groups Group[]
+  assignments RoleAssignment[]
+}
+model Group {
+  id String @id @default(cuid())
+  name String
+  directorateId String
+  directorate Directorate @relation(fields:[directorateId],references:[id])
+  units Unit[]
+  assignments RoleAssignment[]
+}
+model Unit {
+  id String @id @default(cuid())
+  name String
+  groupId String
+  group Group @relation(fields:[groupId],references:[id])
+  institutions Institution[]
+  assignments RoleAssignment[]
+}
+model Institution {
+  id String @id @default(cuid())
+  name String
+  district String
+  publicApproved Boolean @default(false)
+  unitId String
+  unit Unit @relation(fields:[unitId],references:[id])
+  vacancy Int @default(0)
+  latitude Decimal? @db.Decimal(6,3)
+  longitude Decimal? @db.Decimal(6,3)
+  active Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  claims Claim[]
+  visits Visit[]
+  assignments RoleAssignment[]
+  @@index([unitId,active])
+}
+// The catalogue of posts. `level` is the formation the post sits in
+// (INSTITUTION, UNIT, GROUP, DIRECTORATE); `role` is the powers it carries;
+// `head` marks the post that leads its formation and may delegate duties;
+// `officer` marks posts that register through the officer pages.
+model Appointment {
+  code String @id
+  title String
+  level String
+  role String @default("")
+  head Boolean @default(false)
+  officer Boolean @default(false)
+  sort Int @default(0)
+  assignments RoleAssignment[]
+}
+model TrainingYear {
+  label String @id
+  startsOn DateTime @db.Date
+  endsOn DateTime @db.Date
+}
+model Subject {
+  id String @id @default(cuid())
+  name String @unique
+  active Boolean @default(true)
+  visits Visit[]
+  refreshments RefreshmentDetail[]
+}
+model RoleAssignment {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  role String
+  appointmentCode String?
+  appointment Appointment? @relation(fields:[appointmentCode],references:[code])
+  // Exactly one anchor, matching `level` (enforced by a CHECK constraint).
+  level String @default("INSTITUTION")
+  institutionId String?
+  institution Institution? @relation(fields:[institutionId],references:[id], onDelete: Restrict)
+  unitId String?
+  unit Unit? @relation(fields:[unitId],references:[id], onDelete: Restrict)
+  groupId String?
+  group Group? @relation(fields:[groupId],references:[id], onDelete: Restrict)
+  directorateId String?
+  directorate Directorate? @relation(fields:[directorateId],references:[id], onDelete: Restrict)
+  capabilities String[] @default([])
+  startsAt DateTime @default(now())
+  endsAt DateTime?
+  active Boolean @default(true)
+  @@index([userId,active])
+}
+model CadetProfile {
+  id String @id @default(cuid())
+  userId String @unique
+  enrollmentNumber String @unique
+  details Json
+}
+model StaffProfile {
+  id String @id @default(cuid())
+  userId String @unique
+  details Json
+}
+model Visit {
+  id String @id @default(cuid())
+  ownerId String
+  institutionId String
+  institution Institution @relation(fields:[institutionId],references:[id])
+  title String
+  eventDate DateTime @db.Date
+  startsAt DateTime
+  endsAt DateTime
+  purpose String @default("")
+  visitorName String @default("")
+  visitorRank String @default("")
+  visitorAppointment String @default("")
+  periods Int @default(0)
+  cadetsPresent Int @default(0)
+  subjects Subject[]
+  sessions TrainingSession[]
+  notes String
+  status String @default("DRAFT")
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([institutionId,createdAt])
+  @@index([startsAt])
+}
+model TrainingSession {
+  id String @id @default(cuid())
+  visitId String
+  visit Visit @relation(fields:[visitId],references:[id],onDelete:Cascade)
+  date DateTime @db.Date
+  attendance Int
+  category String
+}
+model Achievement {
+  id String @id @default(cuid())
+  ownerId String
+  institutionId String
+  title String
+  privateDetails String
+  createdAt DateTime @default(now())
+}
+model Publication {
+  id String @id @default(cuid())
+  slug String @unique
+  category String
+  institutionId String
+  ownerId String
+  status String @default("DRAFT")
+  version Int @default(1)
+  currentRevisionId String?
+  revisions PublicationRevision[]
+  publicContent PublicContent?
+  createdAt DateTime @default(now())
+}
+model PublicationRevision {
+  id String @id @default(cuid())
+  publicationId String
+  publication Publication @relation(fields:[publicationId],references:[id])
+  number Int
+  title String
+  summary String
+  locale String
+  institutionDisplayName String
+  district String
+  eventDate DateTime @db.Date
+  consentId String?
+  mediaIds String[] @default([])
+  status String @default("DRAFT")
+  authorId String
+  reviewerId String?
+  publishAt DateTime?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  @@unique([publicationId,number])
+}
+model PublicContent {
+  publicId String @id @default(cuid())
+  publicationId String @unique
+  publication Publication @relation(fields:[publicationId],references:[id])
+  slug String @unique
+  category String
+  title String
+  summary String
+  locale String
+  institutionDisplayName String
+  district String
+  eventDate DateTime @db.Date
+  publicationDate DateTime
+  publishAt DateTime
+  expiresAt DateTime?
+  archived Boolean @default(false)
+  media Json
+  @@index([locale,category,publishAt])
+}
+model Notice {
+  id String @id @default(cuid())
+  title String
+  body String
+  locale String
+  translationGroupId String
+  audience String
+  institutionId String
+  category String
+  publishAt DateTime
+  expiresAt DateTime?
+  status String @default("DRAFT")
+  authorId String
+  reviewerId String?
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+}
+model LocalizedContent {
+  id String @id @default(cuid())
+  resourceId String
+  locale String
+  content Json
+  reviewed Boolean @default(false)
+  @@unique([resourceId,locale])
+}
+model RecruitmentEnquiry {
+  id String @id @default(cuid())
+  name String
+  email String
+  district String
+  message String
+  createdAt DateTime @default(now())
+  deleteAfter DateTime
+}
+model ConsentRecord {
+  id String @id @default(cuid())
+  publicationId String
+  recordedBy String
+  evidenceAttachmentId String?
+  permissionConfirmed Boolean
+  guardianRequired Boolean
+  guardianConfirmed Boolean
+  synthetic Boolean @default(false)
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+}
+model MediaAsset {
+  id String @id @default(cuid())
+  attachmentId String
+  publicKey String @unique
+  caption String
+  status String @default("PENDING")
+  createdAt DateTime @default(now())
+}
+model Attachment {
+  id String @id @default(cuid())
+  ownerId String
+  institutionId String
+  resourceType String
+  resourceId String
+  objectKey String @unique
+  declaredType String
+  purpose String @default("")
+  size Int
+  status String @default("QUARANTINED")
+  createdAt DateTime @default(now())
+  scannedAt DateTime?
+}
+model FinancialRatePolicy {
+  id String @id @default(cuid())
+  name String
+  version Int
+  kind String
+  category String
+  effectiveFrom DateTime @db.Date
+  effectiveTo DateTime @db.Date
+  ratePaise BigInt
+  capPaise BigInt
+  partialMonthRule String
+  approved Boolean @default(false)
+  synthetic Boolean @default(true)
+  createdAt DateTime @default(now())
+  @@unique([kind,category,version])
+}
+model Claim {
+  id String @id @default(cuid())
+  ownerId String
+  institutionId String
+  institution Institution @relation(fields:[institutionId],references:[id])
+  kind String
+  category String
+  periodStart DateTime @db.Date
+  periodEnd DateTime @db.Date
+  attendance Int
+  sessions Int
+  state String @default("DRAFT")
+  version Int @default(1)
+  totalPaise BigInt @default(0)
+  paidPaise BigInt @default(0)
+  snapshot Json?
+  idempotencyKey String @unique
+  claimedPaise BigInt?
+  refreshment RefreshmentDetail?
+  honorarium HonorariumDetail?
+  lineItems ClaimLineItem[]
+  approvals ApprovalAction[]
+  payments PaymentRecord[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([institutionId,state,createdAt])
+  @@index([ownerId,periodStart,periodEnd])
+}
+model RefreshmentDetail {
+  claimId String @id
+  claim Claim @relation(fields:[claimId],references:[id],onDelete:Cascade)
+  trainingStart DateTime
+  trainingEnd DateTime
+  instructorName String
+  instructorAppointment String
+  instructorMobileEnc String
+  cadetsPresent Int
+  periods Int
+  subjects Subject[]
+  visitId String?
+  paymentComments String @default("")
+}
+model HonorariumDetail {
+  claimId String @id
+  claim Claim @relation(fields:[claimId],references:[id],onDelete:Cascade)
+  instructorName String
+  instructorRank String
+  instructorAppointment String
+  months Int
+}
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  RETURNED
+  REJECTED
+  CANCELLED
+}
+enum ApprovalOutcome {
+  SUBMITTED
+  RECOMMENDED
+  NOT_RECOMMENDED
+  APPROVED
+  RETURNED
+  REJECTED
+  CANCELLED
+}
+model ApprovalRequest {
+  id String @id @default(cuid())
+  workflow String
+  resourceId String
+  institutionId String
+  requesterId String
+  routeVersion Int
+  stageIndex Int @default(0)
+  cycle Int @default(1)
+  status ApprovalStatus @default(PENDING)
+  version Int @default(1)
+  steps ApprovalStep[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([workflow,resourceId])
+  @@index([status,stageIndex])
+  @@index([institutionId,status])
+}
+model ApprovalStep {
+  id String @id @default(cuid())
+  requestId String
+  request ApprovalRequest @relation(fields:[requestId],references:[id],onDelete:Cascade)
+  cycle Int
+  stageIndex Int
+  stageCode String
+  outcome ApprovalOutcome
+  actorId String
+  system Boolean @default(false)
+  remarks String @default("")
+  createdAt DateTime @default(now())
+  @@index([requestId,createdAt])
+}
+model ClaimLineItem {
+  id String @id @default(cuid())
+  claimId String
+  claim Claim @relation(fields:[claimId],references:[id])
+  version Int
+  snapshot Json
+  totalPaise BigInt
+  createdAt DateTime @default(now())
+}
+model ApprovalAction {
+  id String @id @default(cuid())
+  claimId String
+  claim Claim @relation(fields:[claimId],references:[id])
+  actorId String
+  action String
+  comment String
+  version Int
+  createdAt DateTime @default(now())
+  @@unique([claimId,version])
+}
+model PaymentRecord {
+  id String @id @default(cuid())
+  claimId String
+  claim Claim @relation(fields:[claimId],references:[id])
+  actorId String
+  amountPaise BigInt
+  reference String
+  idempotencyKey String @unique
+  reversalOf String? @unique
+  createdAt DateTime @default(now())
+}
+model AuditEvent {
+  id String @id @default(cuid())
+  actorId String
+  action String
+  resourceId String
+  correlationId String
+  details Json
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+model Notification {
+  id String @id @default(cuid())
+  userId String
+  message String
+  readAt DateTime?
+  createdAt DateTime @default(now())
+}
+model NotificationPreference {
+  userId String @id
+  inApp Boolean @default(true)
+}
+model Discussion {
+  id String @id @default(cuid())
+  institutionId String
+  authorId String
+  body String
+  createdAt DateTime @default(now())
+}
+model Job {
+  id String @id @default(cuid())
+  kind String
+  resourceId String
+  status String @default("PENDING")
+  attempts Int @default(0)
+  runAt DateTime @default(now())
+  lockedAt DateTime?
+  errorCode String?
+  createdAt DateTime @default(now())
+  @@index([status,runAt])
+}
+model RateLimit {
+  key String @id
+  count Int
+  expiresAt DateTime
+}
+model AuthRateLimit {
+  id String @id @default(cuid())
+  key String @unique
+  count Int
+  lastRequest BigInt
+}
+// Self-registration. No User exists until an officer in scope activates the
+// request; the password hash is kept only while the request is pending.
+model RegistrationRequest {
+  id String @id @default(cuid())
+  name String
+  email String
+  passwordHash String?
+  role String
+  appointmentCode String
+  // MEMBER (cadet, ANO, CTO at an institution) or OFFICER (a post at a
+  // unit, group or directorate). Exactly one formation id matches `level`.
+  kind String @default("MEMBER")
+  level String @default("INSTITUTION")
+  institutionId String?
+  unitId String?
+  groupId String?
+  directorateId String?
+  note String @default("")
+  status String @default("PENDING")
+  decidedById String?
+  decidedAt DateTime?
+  decisionNote String @default("")
+  userId String?
+  // Email confirmation: only the SHA-256 of the token is stored.
+  emailVerifiedAt DateTime?
+  verifyTokenHash String? @unique
+  verifyExpiresAt DateTime?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  deleteAfter DateTime
+  @@index([status, institutionId])
+  @@index([email])
+}
+// Outbox for mail. Written in the same transaction as the change that needs
+// it; the worker delivers it. The body is cleared once sent.
+model OutboundEmail {
+  id String @id @default(cuid())
+  to String
+  subject String
+  text String
+  status String @default("PENDING")
+  attempts Int @default(0)
+  createdAt DateTime @default(now())
+  sentAt DateTime?
+  deleteAfter DateTime
+  @@index([status, createdAt])
+}
+// One-time link to set a password, e.g. for a new holder of a post account.
+// Only the SHA-256 of the token is stored.
+model PasswordSetup {
+  id String @id @default(cuid())
+  userId String
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId])
+}

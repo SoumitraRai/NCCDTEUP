@@ -1,0 +1,161 @@
+import Link from "next/link";
+import { ArrowUpRight, CornerUpLeft, FilePen, Inbox } from "lucide-react";
+import { getLocale } from "@/lib/localization/messages";
+import { visitExceptions, visitMetrics } from "@/modules/visits/service";
+import { billInbox, billSummary, myBillWork } from "@/modules/bills/service";
+import { currentActor, reviewer } from "@/components/app/session";
+import { MonthBars, Progress } from "@/components/app/charts";
+import { ago, inr } from "@/components/app/format";
+import { dict } from "@/components/app/i18n";
+export async function generateMetadata({ params }: PageProps<"/[locale]/dashboard">) {
+  return { title: dict((await params).locale).overview.title };
+}
+export default async function Overview({ params, searchParams }: PageProps<"/[locale]/dashboard">) {
+  const locale = getLocale((await params).locale);
+  const t = dict(locale).overview;
+  const year = ((await searchParams).year as string | undefined) || undefined;
+  const actor = await currentActor(locale);
+  const roles = actor.assignments.map((a) => a.role);
+  const cadet = roles.every((r) => r === "CADET");
+  const [metrics, exceptions, inbox, mine, refreshment, honorarium] = await Promise.all([
+    visitMetrics(actor, year),
+    visitExceptions(actor, year),
+    reviewer(roles) ? billInbox(actor) : [],
+    cadet ? { drafts: [], returned: [] } : myBillWork(actor),
+    cadet ? null : billSummary(actor, "REFRESHMENT", year),
+    cadet ? null : billSummary(actor, "HONORARIUM", year),
+  ]);
+  const base = `/${locale}/dashboard`;
+  const q = year ? `?year=${year}` : "";
+  // One bill opens directly; several open the list of the oldest bill's kind.
+  const ownLink = (rows: { id: string; kind: string }[], status: string) => {
+    const slug = rows[0]?.kind === "HONORARIUM" ? "honorarium" : "refreshment";
+    return rows.length === 1 ? `${base}/bills/${slug}?open=${rows[0].id}` : `${base}/bills/${slug}?status=${status}`;
+  };
+  const queue = [
+    reviewer(roles) && { href: `${base}/approvals`, icon: Inbox, count: inbox.length, label: t.waiting, since: inbox[0]?.waitingSince, tone: "text-accent" },
+    mine.returned.length > 0 && { href: ownLink(mine.returned, "RETURNED"), icon: CornerUpLeft, count: mine.returned.length, label: t.returned, since: mine.returned[0]?.updatedAt, tone: "text-warning" },
+    mine.drafts.length > 0 && { href: ownLink(mine.drafts, "DRAFT"), icon: FilePen, count: mine.drafts.length, label: t.drafts, since: mine.drafts[0]?.updatedAt, tone: "text-muted" },
+  ].filter(Boolean) as { href: string; icon: typeof Inbox; count: number; label: string; since?: Date; tone: string }[];
+  const coverage = metrics.institutions ? Math.round((metrics.institutionsVisited / metrics.institutions) * 100) : 0;
+  return (
+    <div className="space-y-10">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
+        <p className="mt-1 text-muted">{t.intro(metrics.year)}</p>
+      </div>
+
+      {queue.length > 0 && (
+        <section aria-labelledby="queue">
+          <h2 id="queue" className="mb-3 text-base font-semibold">{t.needsAction}</h2>
+          <ul className="grid gap-3 md:grid-cols-3">
+            {queue.map((item) => (
+              <li key={item.href}>
+                <Link href={item.href} className="group flex items-start gap-4 rounded-xl border bg-surface p-4 transition-colors duration-150 hover:border-primary/40">
+                  <item.icon size={20} className={`mt-1 ${item.tone}`} />
+                  <div className="flex-1">
+                    <p className="text-[28px] leading-8 font-semibold">{item.count}</p>
+                    <p className="text-muted">{item.label}</p>
+                    {item.since && item.count > 0 && <p className="mt-1 text-xs text-muted">{t.oldest(ago(item.since, locale))}</p>}
+                  </div>
+                  <ArrowUpRight size={16} className="text-muted transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section aria-labelledby="visits" className="grid gap-6 lg:grid-cols-[1fr_340px]">
+        <div className="rounded-xl border bg-surface p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="visits" className="text-base font-semibold">{t.visitsMonthly}</h2>
+            <Link href={`${base}/visits${q}`} className="text-[13px] text-primary hover:underline">{t.allVisits}</Link>
+          </div>
+          <dl className="mt-4 grid grid-cols-3 gap-4">
+            {[
+              [t.visits, metrics.visits],
+              [t.cadetsReached, metrics.cadetsReached],
+              [t.periodsTaught, metrics.periods],
+            ].map(([k, v]) => (
+              <div key={k}>
+                <dt className="text-[13px] text-muted">{k}</dt>
+                <dd className="text-2xl font-semibold">{Number(v).toLocaleString("en-IN")}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="mt-6">
+            <MonthBars data={metrics.months.map((m) => ({ month: m.month, value: m.visits }))} locale={locale} label={t.visits} />
+          </div>
+        </div>
+        <div className="flex flex-col gap-6">
+          <div className="rounded-xl border bg-surface p-5">
+            <h2 className="text-base font-semibold">{t.coverage}</h2>
+            <p className="mt-3 text-[28px] leading-8 font-semibold">{coverage}%</p>
+            <p className="mb-3 text-muted">
+              {t.coverageOf(metrics.institutionsVisited, metrics.institutions)}
+            </p>
+            <Progress value={metrics.institutionsVisited} total={metrics.institutions} label={t.visited} />
+          </div>
+          <div className="rounded-xl border bg-surface p-5">
+            <h2 className="text-base font-semibold">{t.followUp}</h2>
+            {exceptions.noVisit.length + exceptions.noPiVisit.length === 0 ? (
+              <p className="mt-2 text-muted">{t.allCovered}</p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {exceptions.noVisit.map((u) => (
+                  <li key={`n-${u.id}`} className="flex justify-between gap-3"><span>{u.name}</span><span className="text-[13px] text-danger">{t.noVisit}</span></li>
+                ))}
+                {exceptions.noPiVisit
+                  .filter((u) => !exceptions.noVisit.some((n) => n.id === u.id))
+                  .map((u) => (
+                    <li key={`p-${u.id}`} className="flex justify-between gap-3"><span>{u.name}</span><span className="text-[13px] text-warning">{t.noPi}</span></li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {refreshment && honorarium && (
+        <section aria-labelledby="bills">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 id="bills" className="text-base font-semibold">{t.billsYear}</h2>
+          </div>
+          <div className="overflow-x-auto rounded-xl border bg-surface">
+            <table className="w-full min-w-[640px] text-left">
+              <thead className="bg-surface-2 text-[13px] text-muted">
+                <tr>
+                  <th className="px-5 py-2.5 font-medium">{t.bill}</th>
+                  <th className="px-5 py-2.5 text-right font-medium">{t.submitted}</th>
+                  <th className="px-5 py-2.5 text-right font-medium">{t.inReview}</th>
+                  <th className="px-5 py-2.5 text-right font-medium">{t.returnedCol}</th>
+                  <th className="px-5 py-2.5 text-right font-medium">{t.sanctioned}</th>
+                  <th className="px-5 py-2.5 font-medium">{t.paid}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([[t.refreshment, "refreshment", refreshment], [t.honorarium, "honorarium", honorarium]] as const).map(([label, slug, s]) => (
+                  <tr key={slug} className="border-t">
+                    <td className="px-5 py-3">
+                      <Link href={`${base}/bills/${slug}${q}`} className="font-medium hover:text-primary">{label}</Link>
+                      <p className="text-[13px] text-muted">{t.claimed(inr(s.totals.claimedPaise))}</p>
+                    </td>
+                    <td className="px-5 py-3 text-right">{s.totals.submitted}</td>
+                    <td className="px-5 py-3 text-right">{s.totals.inReview}</td>
+                    <td className="px-5 py-3 text-right">{s.totals.returned}</td>
+                    <td className="px-5 py-3 text-right">{s.totals.approved}</td>
+                    <td className="w-56 px-5 py-3">
+                      <div className="mb-1.5 flex justify-between text-[13px]"><span>{t.paidCount(s.totals.paid)}</span><span className="text-muted">{inr(s.totals.paidPaise)}</span></div>
+                      <Progress value={s.totals.paid} total={s.totals.submitted} label={t.billsPaid(label)} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}

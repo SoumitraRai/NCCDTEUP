@@ -1,0 +1,1 @@
+for(let attempt=0;attempt<40;attempt++){try{if((await fetch('http://localhost:3000/api/health')).ok)process.exit(0)}catch{}await new Promise(resolve=>setTimeout(resolve,500));}throw new Error('Application did not become healthy');
