@@ -1,8 +1,11 @@
 import Link from "next/link";
-import { ArrowUpRight, CornerUpLeft, FilePen, Inbox } from "lucide-react";
+import { ArrowUpRight, CornerUpLeft, FilePen, Inbox, Plane } from "lucide-react";
 import { getLocale } from "@/lib/localization/messages";
 import { visitExceptions, visitMetrics } from "@/modules/visits/service";
 import { billInbox, billSummary, myBillWork } from "@/modules/bills/service";
+import { tdInbox, tdNotices } from "@/modules/movement/service";
+import { isOfficer } from "@/modules/identity/officers";
+import { tdDates } from "@/components/app/td-detail";
 import { currentActor, reviewer } from "@/components/app/session";
 import { MonthBars, Progress } from "@/components/app/charts";
 import { ago, inr } from "@/components/app/format";
@@ -12,18 +15,22 @@ export async function generateMetadata({ params }: PageProps<"/[locale]/dashboar
 }
 export default async function Overview({ params, searchParams }: PageProps<"/[locale]/dashboard">) {
   const locale = getLocale((await params).locale);
-  const t = dict(locale).overview;
+  const T = dict(locale);
+  const t = T.overview;
   const year = ((await searchParams).year as string | undefined) || undefined;
   const actor = await currentActor(locale);
   const roles = actor.assignments.map((a) => a.role);
   const cadet = roles.every((r) => r === "CADET");
-  const [metrics, exceptions, inbox, mine, refreshment, honorarium] = await Promise.all([
+  const officer = isOfficer(actor);
+  const [metrics, exceptions, inbox, mine, refreshment, honorarium, tdWaiting, notices] = await Promise.all([
     visitMetrics(actor, year),
     visitExceptions(actor, year),
     reviewer(roles) ? billInbox(actor) : [],
     cadet ? { drafts: [], returned: [] } : myBillWork(actor),
     cadet ? null : billSummary(actor, "REFRESHMENT", year),
     cadet ? null : billSummary(actor, "HONORARIUM", year),
+    officer ? tdInbox(actor) : [],
+    officer ? tdNotices(actor) : [],
   ]);
   const base = `/${locale}/dashboard`;
   const q = year ? `?year=${year}` : "";
@@ -34,6 +41,7 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
   };
   const queue = [
     reviewer(roles) && { href: `${base}/approvals`, icon: Inbox, count: inbox.length, label: t.waiting, since: inbox[0]?.waitingSince, tone: "text-accent" },
+    tdWaiting.length > 0 && { href: `${base}/approvals`, icon: Plane, count: tdWaiting.length, label: t.tdWaiting, since: tdWaiting[0]?.waitingSince, tone: "text-accent" },
     mine.returned.length > 0 && { href: ownLink(mine.returned, "RETURNED"), icon: CornerUpLeft, count: mine.returned.length, label: t.returned, since: mine.returned[0]?.updatedAt, tone: "text-warning" },
     mine.drafts.length > 0 && { href: ownLink(mine.drafts, "DRAFT"), icon: FilePen, count: mine.drafts.length, label: t.drafts, since: mine.drafts[0]?.updatedAt, tone: "text-muted" },
   ].filter(Boolean) as { href: string; icon: typeof Inbox; count: number; label: string; since?: Date; tone: string }[];
@@ -45,12 +53,33 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
         <p className="mt-1 text-muted">{t.intro(metrics.year)}</p>
       </div>
 
+      {notices.length > 0 && (
+        <section aria-labelledby="td-notices">
+          <h2 id="td-notices" className="mb-3 text-base font-semibold">{t.tdNotices}</h2>
+          <ul className="grid gap-3 md:grid-cols-2">
+            {notices.map((n) => (
+              <li key={n.id} className="flex items-start gap-4 rounded-xl border border-accent/40 bg-surface p-4">
+                <Plane size={20} className="mt-0.5 text-accent" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{T.td.notices[n.message] ?? n.message}</p>
+                  <p className="text-[13px] text-muted">{t.tdBy(n.td.createdBy)}</p>
+                  <p className="mt-2 text-[13.5px]">{n.td.from} → {n.td.to}</p>
+                  <p className="text-[13.5px]">{tdDates(n.td, locale)}, {T.td.days(n.td.halfDays)}</p>
+                  <p className="truncate text-[13px] text-muted">{n.td.purpose}</p>
+                </div>
+                <Link href={`/${locale}${n.link}`} className="shrink-0 text-[13px] font-medium text-primary hover:underline">{t.open}<span className="sr-only">: {n.td.purpose}</span></Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {queue.length > 0 && (
         <section aria-labelledby="queue">
           <h2 id="queue" className="mb-3 text-base font-semibold">{t.needsAction}</h2>
           <ul className="grid gap-3 md:grid-cols-3">
             {queue.map((item) => (
-              <li key={item.href}>
+              <li key={item.label}>
                 <Link href={item.href} className="group flex items-start gap-4 rounded-xl border bg-surface p-4 transition-colors duration-150 hover:border-primary/40">
                   <item.icon size={20} className={`mt-1 ${item.tone}`} />
                   <div className="flex-1">

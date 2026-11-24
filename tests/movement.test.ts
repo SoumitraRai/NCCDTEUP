@@ -16,7 +16,10 @@ const u = {
   branch: `tbr-${run}`,
   dir: `tdir-${run}`,
   adg: `tadg-${run}`,
+  lone: `tlone-${run}`,
 };
+// A group with no Group Commander, so its first step is vacant.
+const empty = { group: `tg-${run}`, unit: `tu-${run}` };
 const created: string[] = [];
 const DAY = 86_400_000;
 const inDays = (n: number) => new Date(Date.parse(`${istDate()}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
@@ -41,6 +44,7 @@ const decideAs = async (userId: string, id: string, decision: string, remarks = 
   decideTd(await as(userId), id, { decision, remarks, version: await version(id) });
 const typedPi = { name: "B. Yadav", rank: "Sub", formation: { level: "UNIT", id: "unit-1" } };
 beforeAll(async () => {
+  await db.group.create({ data: { id: empty.group, name: `Group ${run}`, directorateId: "dte-up", units: { create: { id: empty.unit, name: `Unit ${run}` } } } });
   const posts = [
     [u.ao, "CO", "AO", { level: "UNIT", unitId: "unit-1" }, []],
     [u.trav, "CO", "AO", { level: "UNIT", unitId: "unit-1" }, []],
@@ -50,6 +54,7 @@ beforeAll(async () => {
     [u.branch, "DTE_STAFF", "BR_PNC", { level: "DIRECTORATE", directorateId: "dte-up" }, ["movement"]],
     [u.dir, "DTE_STAFF", "DIR", { level: "DIRECTORATE", directorateId: "dte-up" }, []],
     [u.adg, "ADMIN", "ADG", { level: "DIRECTORATE", directorateId: "dte-up" }, []],
+    [u.lone, "CO", "AO", { level: "UNIT", unitId: empty.unit }, []],
   ] as const;
   for (const [id, role, appointmentCode, anchor, capabilities] of posts)
     await db.user.upsert({
@@ -66,6 +71,8 @@ afterAll(async () => {
   await db.tdRequest.deleteMany({ where: { id: { in: created } } });
   await db.roleAssignment.deleteMany({ where: { userId: { in: ids } } });
   await db.user.deleteMany({ where: { id: { in: ids } } });
+  await db.unit.deleteMany({ where: { id: empty.unit } });
+  await db.group.deleteMany({ where: { id: empty.group } });
   await db.$disconnect();
 });
 describe("temporary duty", () => {
@@ -179,5 +186,11 @@ describe("temporary duty", () => {
     expect(g.formations.UNIT.map((f) => f.id)).not.toContain("unit-2");
     expect(g.formations.DIRECTORATE).toEqual([]);
     expect((await tdOptions(await as("ano"))).canSend).toBe(false);
+  });
+  it("says when the step it waits at has nobody in the post", async () => {
+    const td = await own(u.lone);
+    expect((await getTd(await as(u.lone), td.id)).awaiting).toMatchObject({ code: "GP_CDR", vacant: true });
+    const held = await own(u.ao);
+    expect((await getTd(await as(u.ao), held.id)).awaiting).toMatchObject({ code: "GP_CDR", vacant: false });
   });
 });

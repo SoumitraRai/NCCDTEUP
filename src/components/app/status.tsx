@@ -20,8 +20,9 @@ const states: Record<string, keyof typeof tone> = {
   CANCELLED: "neutral",
 };
 const visitStates: Record<string, keyof typeof tone> = { DRAFT: "neutral", SUBMITTED: "success" };
-export function Status({ state, kind = "bill", locale }: { state: string; kind?: "bill" | "visit"; locale: string }) {
-  const t = (kind === "visit" ? visitStates : states)[state] ?? "neutral";
+const tdStates: Record<string, keyof typeof tone> = { PENDING: "info", RETURNED: "warning", APPROVED: "primary", COMPLETED: "success", REJECTED: "danger", CANCELLED: "neutral" };
+export function Status({ state, kind = "bill", locale }: { state: string; kind?: "bill" | "visit" | "td"; locale: string }) {
+  const t = (kind === "visit" ? visitStates : kind === "td" ? tdStates : states)[state] ?? "neutral";
   const label = dict(locale).status[kind][state] ?? state.toLowerCase();
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${tone[t]}`}>

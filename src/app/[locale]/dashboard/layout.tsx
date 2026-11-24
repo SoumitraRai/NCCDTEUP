@@ -5,6 +5,7 @@ import { AppError } from "@/server/authorization";
 import { getLocale } from "@/lib/localization/messages";
 import { trainingYears, resolveTrainingYear } from "@/modules/platform/training-year";
 import { billInbox } from "@/modules/bills/service";
+import { tdInbox, tdNotices } from "@/modules/movement/service";
 import { pendingRegistrations } from "@/modules/identity/registration";
 import { isOfficer } from "@/modules/identity/officers";
 import { canApproveOfficers, pendingOfficerRequests } from "@/modules/identity/officer-registration";
@@ -40,18 +41,21 @@ export default async function DashboardLayout({ children, params }: LayoutProps<
   const roles = actor.assignments.map((a) => a.role);
   const cadet = roles.every((r) => r === "CADET");
   const approvesOfficers = await canApproveOfficers(actor);
-  const [years, { year }, inbox, waitingMembers, waitingOfficers] = await Promise.all([
+  const officer = isOfficer(actor);
+  const [years, { year }, inbox, waitingMembers, waitingOfficers, tdWaiting, tdUnread] = await Promise.all([
     trainingYears(),
     resolveTrainingYear(),
     reviewer(roles) ? billInbox(actor) : [],
     reviewer(roles) ? pendingRegistrations(actor) : 0,
     approvesOfficers ? pendingOfficerRequests(actor) : 0,
+    officer ? tdInbox(actor) : [],
+    officer ? tdNotices(actor) : [],
   ]);
   const waiting = waitingMembers + waitingOfficers;
   const base = `/${locale}/dashboard`;
   const items: NavItem[] = [
     { href: base, label: t.overview, icon: "overview" },
-    ...(reviewer(roles) ? [{ href: `${base}/approvals`, label: t.pending, icon: "approvals" as const, count: inbox.length }] : []),
+    ...(reviewer(roles) || officer ? [{ href: `${base}/approvals`, label: t.pending, icon: "approvals" as const, count: inbox.length + tdWaiting.length }] : []),
     { href: `${base}/visits`, label: t.visits, icon: "visits", section: t.sectionVisits },
     ...(cadet
       ? []
@@ -60,7 +64,8 @@ export default async function DashboardLayout({ children, params }: LayoutProps<
           { href: `${base}/bills/refreshment`, label: t.refreshment, icon: "refreshment" as const, section: t.sectionVisits },
           { href: `${base}/bills/honorarium`, label: t.honorarium, icon: "honorarium" as const, section: t.sectionVisits },
         ]),
-    ...(isOfficer(actor) ? [{ href: `${base}/officers`, label: t.officers, icon: "officers" as const, section: t.sectionPeople }] : []),
+    ...(officer ? [{ href: `${base}/movement/td`, label: t.movement, icon: "movement" as const, count: tdUnread.length + tdWaiting.length, section: t.sectionMovement }] : []),
+    ...(officer ? [{ href: `${base}/officers`, label: t.officers, icon: "officers" as const, section: t.sectionPeople }] : []),
     ...(reviewer(roles) || approvesOfficers ? [{ href: `${base}/registrations`, label: t.registrations, icon: "registrations" as const, count: waiting, section: t.sectionPeople }] : []),
     ...(roles.includes("ADMIN") ? [{ href: `${base}/posts`, label: t.posts, icon: "posts" as const, section: t.sectionPeople }] : []),
     { href: `/${locale}/workspace`, label: t.other, icon: "workspace", section: t.sectionMore },

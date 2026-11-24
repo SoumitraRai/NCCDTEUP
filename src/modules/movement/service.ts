@@ -3,11 +3,11 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/server/db";
 import { AppError, actorById, assignmentInclude, assignmentsWithin, liveAssignments, toAssignment, type Actor, type Assignment } from "@/server/authorization";
 import { audit } from "@/modules/audit";
-import { cancelRequest, decide, openRequest, pendingWhere, timeline, type Chain } from "@/modules/approvals/engine";
+import { awaiting, cancelRequest, decide, openRequest, pendingWhere, timeline, type Chain } from "@/modules/approvals/engine";
 import { chainOf } from "@/modules/identity/officer-registration";
 import { page, terms, type ListQuery } from "@/modules/platform/query";
 import { istDate, resolveTrainingYear } from "@/modules/platform/training-year";
-import { checkNotice, tdHalfDays, tdStartIndex } from "./rules";
+import { checkNotice, tdHalfDays, tdStartIndex, type Half } from "./rules";
 type Tx = Prisma.TransactionClient;
 // Officer roles may send someone on TD; ANOs, CTOs and cadets may not.
 const OFFICER_ROLES = ["CO", "GROUP", "GROUP_STAFF", "ADMIN", "DTE_STAFF"];
@@ -93,7 +93,7 @@ const snapshot = (td: TdRow) => ({
 // Messages are stored in English; the dashboard shows them in Hindi too.
 async function notify(tx: Tx, td: TdRow, message: string) {
   if (td.kind !== "SENT" || !td.travellerId) return;
-  await tx.notification.create({ data: { userId: td.travellerId, message, resourceId: td.id, link: `/dashboard/td?open=${td.id}` } });
+  await tx.notification.create({ data: { userId: td.travellerId, message, resourceId: td.id, link: `/dashboard/movement/td?open=${td.id}` } });
 }
 export const TD_NOTICES = {
   sent: "You have been sent on temporary duty.",
@@ -201,8 +201,8 @@ async function present(actor: Actor, rows: TdRow[]) {
       level: r.level,
       from: r.fromPlace,
       to: r.toPlace,
-      start: { date: ymd(r.startDate), half: r.startHalf },
-      end: { date: ymd(r.endDate), half: r.endHalf },
+      start: { date: ymd(r.startDate), half: r.startHalf as Half },
+      end: { date: ymd(r.endDate), half: r.endHalf as Half },
       halfDays: r.halfDays,
       purpose: r.purpose,
       ownArrangement: r.ownArrangement,
@@ -251,6 +251,7 @@ export async function getTd(actor: Actor, id: string) {
   return {
     ...row,
     approval: await timeline("TD", id),
+    awaiting: await awaiting("TD", id),
     submissions: (await db.tdSubmission.findMany({ where: { tdId: id }, orderBy: { cycle: "asc" } })).map((s) => ({ cycle: s.cycle, snapshot: s.snapshot, at: s.createdAt })),
     canDecide: await decidable(actor, id),
     canEdit: editable && td.status === "RETURNED",
@@ -328,7 +329,7 @@ export async function tdInbox(actor: Actor) {
 // Unread TD notices for the Overview card and the sidebar count.
 export async function tdNotices(actor: Actor) {
   const notices = await db.notification.findMany({
-    where: { userId: actor.id, readAt: null, resourceId: { not: null }, link: { startsWith: "/dashboard/td" } },
+    where: { userId: actor.id, readAt: null, resourceId: { not: null }, link: { startsWith: "/dashboard/movement/td" } },
     orderBy: { createdAt: "desc" },
     take: 20,
   });

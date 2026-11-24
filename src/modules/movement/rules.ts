@@ -1,16 +1,14 @@
 import { AppError, type Assignment } from "@/server/authorization";
+import { halfDaysBetween, type Half } from "./days";
 // Temporary duty rules (docs/superpowers/specs/2026-11-24-movement-td-design.md).
 // Development defaults, not NCC policy (spec 2026-11-24): the directorate
 // will supply the real day-count and notice rules.
 export const TD_DEFAULTS = { noticeDays: 2 } as const;
-export type Half = "FN" | "AN";
 const DAY = 86_400_000;
 const utc = (date: string) => Date.parse(`${date}T00:00:00Z`);
-// Both dates count; starting in the afternoon or returning in the forenoon
-// makes that day a half. Returned in half-days.
+export type { Half } from "./days";
 export function tdHalfDays(start: { date: string; half: Half }, end: { date: string; half: Half }) {
-  const days = (utc(end.date) - utc(start.date)) / DAY + 1;
-  const halves = 2 * days - (start.half === "AN" ? 1 : 0) - (end.half === "FN" ? 1 : 0);
+  const halves = halfDaysBetween(start, end);
   if (!Number.isFinite(halves) || halves <= 0) throw new AppError(400, "The return must be after the start.");
   return halves;
 }

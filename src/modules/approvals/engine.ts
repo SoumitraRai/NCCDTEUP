@@ -97,6 +97,30 @@ export function stageOf(workflow: string, index: number) {
   if (!route) throw new AppError(500, "Unknown approval route.");
   return route.stages[index];
 }
+type RequestRow = Prisma.ApprovalRequestGetPayload<object>;
+// Live assignments that hold the request's current stage, never the
+// requester's or the traveller's.
+async function holders(client: Tx | typeof db, req: RequestRow, user: Prisma.UserWhereInput = {}) {
+  const stage = stageOf(req.workflow, req.stageIndex);
+  const candidates = await client.roleAssignment.findMany({
+    where: {
+      ...live(),
+      ...(stage.roles ? { role: { in: stage.roles } } : stage.posts ? { appointmentCode: { in: stage.posts } } : { capabilities: { has: stage.duty ?? "" } }),
+      userId: { notIn: [req.requesterId, ...(req.travellerId ? [req.travellerId] : [])] },
+      user: { active: true, ...user },
+    },
+    include: assignmentInclude,
+    orderBy: { userId: "asc" },
+  });
+  return candidates.filter((a) => holds(toAssignment(a), stage, chainOf(req)));
+}
+// The stage a pending request waits at, and whether anyone holds it now.
+export async function awaiting(workflow: string, resourceId: string) {
+  const req = await db.approvalRequest.findUnique({ where: { workflow_resourceId: { workflow, resourceId } } });
+  if (!req || req.status !== "PENDING") return null;
+  const { code, title } = stageOf(workflow, req.stageIndex);
+  return { code, title, vacant: !(await holders(db, req)).length };
+}
 // "System R": a stage holder who opted in recommends automatically. It never
 // applies to the requester and never to an approval (sanction) stage.
 async function autoRecommend(tx: Tx, requestId: string) {
@@ -104,18 +128,7 @@ async function autoRecommend(tx: Tx, requestId: string) {
     const req = await tx.approvalRequest.findUniqueOrThrow({ where: { id: requestId } });
     const stage = stageOf(req.workflow, req.stageIndex);
     if (req.status !== "PENDING" || stage.kind !== "RECOMMEND") return req;
-    const chain = chainOf(req);
-    const candidates = await tx.roleAssignment.findMany({
-      where: {
-        ...live(),
-        ...(stage.roles ? { role: { in: stage.roles } } : stage.posts ? { appointmentCode: { in: stage.posts } } : { capabilities: { has: stage.duty ?? "" } }),
-        userId: { notIn: [req.requesterId, ...(req.travellerId ? [req.travellerId] : [])] },
-        user: { active: true, autoRecommend: true },
-      },
-      include: assignmentInclude,
-      orderBy: { userId: "asc" },
-    });
-    const holder = candidates.find((a) => holds(toAssignment(a), stage, chain));
+    const holder = (await holders(tx, req, { autoRecommend: true }))[0];
     if (!holder) return req;
     await tx.approvalStep.create({
       data: {

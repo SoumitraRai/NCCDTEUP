@@ -3,10 +3,10 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useState, type ReactNode } from "react";
-import { BadgeIndianRupee, ClipboardCheck, GraduationCap, Inbox, LayoutGrid, LogOut, MapPinned, Menu, Moon, School, Sun, X, Boxes, UserPlus, Users, KeyRound } from "lucide-react";
+import { BadgeIndianRupee, ClipboardCheck, GraduationCap, Inbox, LayoutGrid, LogOut, MapPinned, Menu, Moon, School, Sun, X, Boxes, UserPlus, Users, KeyRound, Plane } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { useT } from "./i18n-client";
-const icons = { overview: LayoutGrid, approvals: Inbox, visits: MapPinned, institutions: School, refreshment: BadgeIndianRupee, honorarium: GraduationCap, workspace: Boxes, checks: ClipboardCheck, registrations: UserPlus, officers: Users, posts: KeyRound };
+const icons = { overview: LayoutGrid, approvals: Inbox, visits: MapPinned, institutions: School, refreshment: BadgeIndianRupee, honorarium: GraduationCap, workspace: Boxes, checks: ClipboardCheck, registrations: UserPlus, officers: Users, posts: KeyRound, movement: Plane };
 export type NavItem = { href: string; label: string; icon: keyof typeof icons; count?: number; section?: string };
 // `footer` (who is signed in, sign out) is shown in the phone menu; on wide
 // screens the rail shows it itself.
