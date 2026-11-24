@@ -4,7 +4,7 @@ import { actorById } from "../src/server/authorization";
 import { istDate } from "../src/modules/platform/training-year";
 import { parseList } from "../src/modules/platform/query";
 import { timeline } from "../src/modules/approvals/engine";
-import { cancelTd, createTd, decideTd, getTd, listTd, markTdSeen, resubmitTd, tdInbox, tdNotices } from "../src/modules/movement/service";
+import { cancelTd, createTd, decideTd, getTd, listTd, markTdSeen, resubmitTd, tdInbox, tdNotices, tdOptions } from "../src/modules/movement/service";
 // TD requests end to end in the service layer. Seeded: group (Gp Cdr,
 // group-1), group2 (Gp Cdr, group-2), admin (DDG). Everyone else is made here.
 const run = crypto.randomUUID().slice(0, 8);
@@ -166,5 +166,18 @@ describe("temporary duty", () => {
     const list = await listTd(await as(u.adg), { ...parseList({}), queue: "pending", mine: true });
     expect(list.counts.completed).toBeGreaterThanOrEqual(1);
     expect(list.counts.disposed).toBeGreaterThanOrEqual(1);
+  });
+  it("offers own posts, and people and formations only within reach", async () => {
+    const mine = await tdOptions(await as(u.two));
+    expect(mine.ownPosts.map((p) => p.title).sort()).toEqual(["Deputy Group Commander", "Group Training Officer"]);
+    const g = await tdOptions(await as("group"));
+    expect(g.canSend).toBe(true);
+    expect(g.people.map((p) => p.postId)).toContain(await postOf(u.ao));
+    expect(g.people.map((p) => p.postId)).not.toContain(await postOf(u.two, "group-2"));
+    expect(g.people.some((p) => p.postId === g.ownPosts[0]?.id)).toBe(false);
+    expect(g.formations.UNIT.map((f) => f.id)).toContain("unit-1");
+    expect(g.formations.UNIT.map((f) => f.id)).not.toContain("unit-2");
+    expect(g.formations.DIRECTORATE).toEqual([]);
+    expect((await tdOptions(await as("ano"))).canSend).toBe(false);
   });
 });

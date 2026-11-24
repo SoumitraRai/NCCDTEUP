@@ -51,6 +51,9 @@ test("anonymous private endpoints fail closed", async ({ request, page }) => {
     "export",
     "attachments/unknown",
     "officers/unknown/post",
+    "td",
+    "td/options",
+    "td/unknown",
   ])
     expect((await request.get(`/api/private/${path}`)).status()).toBe(401);
   await page.goto("/en/dashboard");

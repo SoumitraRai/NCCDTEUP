@@ -342,3 +342,37 @@ export async function tdNotices(actor: Actor) {
 export async function markTdSeen(actor: Actor, id: string) {
   await db.notification.updateMany({ where: { userId: actor.id, resourceId: id, readAt: null }, data: { readAt: new Date() } });
 }
+// What the New TD form offers: the actor's own posts, and the people and
+// formations they may send (within their officer posts' reach).
+export async function tdOptions(actor: Actor) {
+  const senders = officerPosts(actor);
+  const live = { ...liveAssignments(), level: { in: [...LEVELS] } };
+  const postInclude = { appointment: true, unit: true, group: true, directorate: true } satisfies Prisma.RoleAssignmentInclude;
+  type Post = Prisma.RoleAssignmentGetPayload<{ include: typeof postInclude }>;
+  const formation = (p: Post) => (p.unit ?? p.group ?? p.directorate)?.name ?? "";
+  const [own, people] = await Promise.all([
+    db.roleAssignment.findMany({ where: { userId: actor.id, ...live }, include: postInclude, orderBy: { startsAt: "asc" } }),
+    senders.length
+      ? db.roleAssignment.findMany({
+          where: { AND: [live, { userId: { not: actor.id }, user: { active: true } }, assignmentsWithin({ ...actor, assignments: senders }, "read")] },
+          include: { ...postInclude, user: { select: { name: true } } },
+          orderBy: { user: { name: "asc" } },
+          take: 300,
+        })
+      : [],
+  ]);
+  const keys = (k: "unitId" | "groupId" | "directorateId") => senders.filter((a) => reachKey(a.role) === k).map((a) => a.anchor[k]!).filter(Boolean);
+  const [dtes, groups, units] = [keys("directorateId"), keys("groupId"), keys("unitId")];
+  const named = { select: { id: true, name: true }, orderBy: { name: "asc" as const } };
+  const [UNIT, GROUP, DIRECTORATE] = await Promise.all([
+    db.unit.findMany({ where: { OR: [{ id: { in: units } }, { groupId: { in: groups } }, { group: { directorateId: { in: dtes } } }] }, ...named }),
+    db.group.findMany({ where: { OR: [{ id: { in: groups } }, { directorateId: { in: dtes } }] }, ...named }),
+    db.directorate.findMany({ where: { id: { in: dtes } }, ...named }),
+  ]);
+  return {
+    ownPosts: own.map((p) => ({ id: p.id, title: p.appointment?.title ?? "", formation: formation(p), level: p.level })),
+    people: people.map((p) => ({ postId: p.id, name: p.user.name, post: p.appointment?.title ?? "", formation: formation(p) })),
+    formations: { UNIT, GROUP, DIRECTORATE },
+    canSend: senders.length > 0,
+  };
+}
