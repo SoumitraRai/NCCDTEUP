@@ -22,8 +22,9 @@ export function reportState(c: { status: string; start: string; end: string; rep
   if (campState(c, today) !== "COMPLETED") return "NOT_YET";
   return today > reportDueDate(c.end) ? "OVERDUE" : "DUE";
 }
-export function checkPlan(p: { start: string; end: string; plannedStrength: number; seats: { unitId: string; seats: number }[]; hostUnitId: string }) {
+export function checkPlan(p: { start: string; end: string; briefing?: string; plannedStrength: number; seats: { unitId: string; seats: number }[]; hostUnitId: string }) {
   if (p.end < p.start) throw new AppError(400, "The camp must end on or after its start.");
+  if (p.briefing && p.briefing > p.start) throw new AppError(400, "Hold the briefing on or before the first day of the camp.");
   if (campDays(p.start, p.end) > 30) throw new AppError(400, "A camp can last at most 30 days.");
   if (new Set(p.seats.map((s) => s.unitId)).size !== p.seats.length) throw new AppError(400, "List each unit once.");
   if (!p.seats.some((s) => s.unitId === p.hostUnitId)) throw new AppError(400, "Give the host unit its seats.");

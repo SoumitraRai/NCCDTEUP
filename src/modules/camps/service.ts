@@ -6,6 +6,7 @@ import { audit } from "@/modules/audit";
 import { terms } from "@/modules/platform/query";
 import { istDate, resolveTrainingYear } from "@/modules/platform/training-year";
 import { canSend } from "@/modules/movement/rules";
+import { entersFor, total, unitTotals } from "./enrolment";
 import { campDays, campState, checkPlan, reportDueDate, reportState, type CampState, type ReportState } from "./rules";
 // Camps (docs/superpowers/specs/2026-11-25-camps-design.md).
 type Tx = Prisma.TransactionClient;
@@ -74,6 +75,8 @@ const planInput = z
     start: date,
     end: date,
     plannedStrength: count.min(1, "Planned strength must be at least 1.").max(5000, "Planned strength must be at most 5000."),
+    // Optional; "" clears it.
+    briefing: z.union([date, z.literal("")]).default(""),
     seats: z.array(z.object({ unitId: z.string().min(1).max(40), seats: count.min(0, "Seats cannot be negative.").max(5000) }).strict()).min(1).max(60),
     details: z.string().trim().max(2000, "Keep the details under 2000 characters.").default(""),
   })
@@ -107,6 +110,7 @@ const fields = (input: z.infer<typeof editInput>) => ({
   startDate: day(input.start),
   endDate: day(input.end),
   plannedStrength: input.plannedStrength,
+  briefingDate: input.briefing ? day(input.briefing) : null,
   details: input.details,
 });
 export async function createCamp(actor: Actor, raw: unknown) {
@@ -240,6 +244,7 @@ function present(c: CampRow, today: string) {
     end: at.end,
     days: campDays(at.start, at.end),
     plannedStrength: c.plannedStrength,
+    briefing: c.briefingDate ? ymd(c.briefingDate) : null,
     allocated,
     attended,
     details: c.details,
@@ -308,7 +313,7 @@ export async function campStrength(actor: Actor, f: { year?: string; group?: str
     else if (GROUP_ROLES.includes(a.role) && a.anchor.groupId) or.push({ groupId: a.anchor.groupId });
     else if ((a.role === "CO" || a.role === "ANO") && a.anchor.unitId) or.push({ id: a.anchor.unitId });
   }
-  if (!or.length) return { year: year.label, groups: [], totals: { units: 0, hosted: 0, seats: 0, attended: 0, without: 0 } };
+  if (!or.length) return { year: year.label, groups: [], totals: sum([]) };
   const units = await db.unit.findMany({
     where: { AND: [{ OR: or }, ...(f.group ? [{ groupId: f.group }] : [])] },
     include: {
@@ -318,21 +323,39 @@ export async function campStrength(actor: Actor, f: { year?: string; group?: str
     },
     orderBy: [{ group: { name: "asc" } }, { name: "asc" }],
   });
-  const groups = new Map<string, { id: string; name: string; units: { id: string; name: string; hosted: number; seats: number; attended: number; camps: number }[] }>();
+  const cadets = await unitTotals(actor, units.map((u) => u.id), year.label);
+  const groups = new Map<string, { id: string; name: string; units: UnitStrength[] }>();
   for (const u of units) {
     const g = groups.get(u.group.id) ?? { id: u.group.id, name: u.group.name, units: [] };
-    g.units.push({ id: u.id, name: u.name, hosted: u.camps.length, camps: u.campSeats.length, seats: u.campSeats.reduce((n, s) => n + s.seats, 0), attended: u.campSeats.reduce((n, s) => n + (s.attended ?? 0), 0) });
+    const c = cadets(u.id);
+    g.units.push({
+      id: u.id,
+      name: u.name,
+      hosted: u.camps.length,
+      camps: u.campSeats.length,
+      seats: u.campSeats.reduce((n, s) => n + s.seats, 0),
+      attended: u.campSeats.reduce((n, s) => n + (s.attended ?? 0), 0),
+      authorised: total(c.authorised),
+      enrolled: total(c.enrolled),
+      byType: c,
+      canEnter: entersFor(actor, u.id),
+    });
     groups.set(g.id, g);
   }
   const list = [...groups.values()].map((g) => ({ ...g, totals: sum(g.units) }));
   return { year: year.label, groups: list, totals: sum(list.flatMap((g) => g.units)) };
 }
-const sum = (units: { hosted: number; seats: number; attended: number; camps: number }[]) => ({
+type UnitStrength = { id: string; name: string; hosted: number; seats: number; attended: number; camps: number; authorised: number; enrolled: number; byType: Awaited<ReturnType<typeof unitTotals>> extends (id: string) => infer R ? R : never; canEnter: boolean };
+// Short by: enrolled cadets without a camp seat this year (never below 0).
+const sum = (units: Pick<UnitStrength, "hosted" | "seats" | "attended" | "camps" | "authorised" | "enrolled">[]) => ({
   units: units.length,
   hosted: units.reduce((n, u) => n + u.hosted, 0),
   seats: units.reduce((n, u) => n + u.seats, 0),
   attended: units.reduce((n, u) => n + u.attended, 0),
   without: units.filter((u) => u.camps === 0).length,
+  authorised: units.reduce((n, u) => n + u.authorised, 0),
+  enrolled: units.reduce((n, u) => n + u.enrolled, 0),
+  short: units.reduce((n, u) => n + Math.max(0, u.enrolled - u.seats), 0),
 });
 // What the plan form offers: host units, and for each group its units (seats).
 export async function campOptions(actor: Actor) {

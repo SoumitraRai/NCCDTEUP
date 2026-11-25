@@ -115,6 +115,7 @@ model Institution {
   claims Claim[]
   visits Visit[]
   assignments RoleAssignment[]
+  strengths CadetStrength[]
   @@index([unitId,active])
 }
 // The catalogue of posts. `level` is the formation the post sits in
@@ -672,6 +673,8 @@ model Camp {
   startDate DateTime @db.Date
   endDate DateTime @db.Date
   plannedStrength Int
+  // Optional pre-camp briefing, on or before the start.
+  briefingDate DateTime? @db.Date
   details String @default("")
   // PLANNED or CANCELLED.
   status String @default("PLANNED")
@@ -715,4 +718,24 @@ model CampReportSubmission {
   decidedAt DateTime?
   remarks String @default("")
   @@unique([campId,round])
+}
+// Cadet strength of one institution for one training year, entered by its
+// unit (CO/AO): authorised and enrolled per cadet type (JD, JW, SD, SW).
+model CadetStrength {
+  id String @id @default(cuid())
+  institutionId String
+  institution Institution @relation(fields:[institutionId],references:[id])
+  trainingYear String
+  authJD Int @default(0)
+  authJW Int @default(0)
+  authSD Int @default(0)
+  authSW Int @default(0)
+  enrJD Int @default(0)
+  enrJW Int @default(0)
+  enrSD Int @default(0)
+  enrSW Int @default(0)
+  version Int @default(1)
+  updatedById String
+  updatedAt DateTime @updatedAt
+  @@unique([institutionId,trainingYear])
 }

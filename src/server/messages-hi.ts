@@ -1,6 +1,14 @@
 // Hindi for messages the server sends back to the dashboard. Keys are the
 // exact English text; anything not listed is returned in English.
 const exact: Record<string, string> = {
+  "Hold the briefing on or before the first day of the camp.": "ब्रीफ़िंग कैंप के पहले दिन या उससे पहले रखें।",
+  "Only the unit's CO or AO can enter its cadet strength.": "केवल यूनिट के CO या AO उसकी कैडेट संख्या भर सकते हैं।",
+  "List each institution once.": "हर संस्थान एक ही बार लिखें।",
+  "Enter strength only for the unit's own institutions.": "केवल यूनिट के अपने संस्थानों की संख्या भरें।",
+  "Someone changed this strength. Refresh and try again.": "किसी ने यह संख्या बदल दी है। पेज रीफ़्रेश करके फिर प्रयास करें।",
+  "Strength cannot be negative.": "संख्या ऋणात्मक नहीं हो सकती।",
+  "Strength must be at most 10000.": "संख्या अधिकतम 10000 हो सकती है।",
+  "Unit not found.": "यूनिट नहीं मिली।",
   "A camp can be cancelled only before it starts.": "कैंप शुरू होने से पहले ही रद्द किया जा सकता है।",
   "A camp can be changed only before it starts.": "कैंप शुरू होने से पहले ही बदला जा सकता है।",
   "A camp can last at most 30 days.": "कैंप अधिकतम 30 दिन का हो सकता है।",

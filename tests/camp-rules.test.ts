@@ -36,5 +36,7 @@ describe("plan checks", () => {
     expect(() => checkPlan({ ...plan, hostUnitId: "u3" })).toThrow("Give the host unit its seats.");
     expect(() => checkPlan({ ...plan, end: "2026-11-30" })).toThrow("The camp must end on or after its start.");
     expect(() => checkPlan({ ...plan, end: "2027-01-15" })).toThrow("A camp can last at most 30 days.");
+    expect(() => checkPlan({ ...plan, briefing: "2026-12-02" })).toThrow("Hold the briefing on or before the first day of the camp.");
+    expect(checkPlan({ ...plan, briefing: "2026-12-01" })).toBe(450);
   });
 });

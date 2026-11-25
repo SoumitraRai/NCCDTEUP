@@ -60,6 +60,12 @@ describe("camps", () => {
     const camp = await getCamp(await as("co"), c.id);
     expect(camp).toMatchObject({ state: "UPCOMING", report: "NOT_YET", days: 10, allocated: 350, plannedStrength: 400, unit: { id: "unit-1" }, group: { id: "group-1" }, canEdit: true, canReport: false });
     expect(camp.history.map((h) => h.action)).toEqual(["planned"]);
+    expect(camp.briefing).toBeNull();
+    const briefed = await make("co", { briefing: inDays(7) });
+    expect((await getCamp(await as("admin"), briefed.id)).briefing).toBe(inDays(7));
+    await updateCamp(await as("co"), briefed.id, { ...edit({ briefing: "" }), version: 1 });
+    expect((await getCamp(await as("co"), briefed.id)).briefing).toBeNull();
+    await expect(make("co", { briefing: inDays(11) })).rejects.toThrow("Hold the briefing on or before the first day of the camp.");
   });
   it("refuses another unit, another group's seats, over-allocation, a past start and a repeated CATC", async () => {
     await expect(createCamp(await as("co"), plan({ unitId: "unit-2", seats: [{ unitId: "unit-2", seats: 10 }] }))).rejects.toMatchObject({ status: 403 });
