@@ -7,6 +7,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { z } from "zod";
 import { db } from "../db";
+import { campForFiles } from "@/modules/camps/service";
 import {
   AppError,
   claimScope,
@@ -31,7 +32,13 @@ async function authorizeResource(
   resourceType: string,
   resourceId: string,
   institutionId: string,
+  write = false,
 ) {
+  // Camps belong to units, not institutions: their files carry institutionId "".
+  if (resourceType === "camp") {
+    if (institutionId !== "") throw new AppError(404, "Resource not found.");
+    return campForFiles(actor, resourceId, write);
+  }
   await requireInstitution(actor, institutionId, "read");
   const found =
     resourceType === "claim"
@@ -66,7 +73,7 @@ export async function uploadIntent(actor: Actor, raw: unknown) {
   const input = z
     .object({
       institutionId: z.string(),
-      resourceType: z.enum(["claim", "visit", "publication"]),
+      resourceType: z.enum(["claim", "visit", "publication", "camp"]),
       resourceId: z.string(),
       declaredType: z.enum(["image/jpeg", "image/png", "application/pdf"]),
       size: z
@@ -74,7 +81,7 @@ export async function uploadIntent(actor: Actor, raw: unknown) {
         .int()
         .positive()
         .max(10 * 1024 * 1024),
-      purpose: z.enum(["", "BILL", "PHOTO", "DOCUMENT"]).default(""),
+      purpose: z.enum(["", "BILL", "PHOTO", "DOCUMENT", "REPORT"]).default(""),
     })
     .strict()
     .parse(raw);
@@ -93,6 +100,7 @@ export async function uploadIntent(actor: Actor, raw: unknown) {
     input.resourceType,
     input.resourceId,
     input.institutionId,
+    true,
   );
   if (
     (await db.attachment.count({ where: { resourceId: input.resourceId } })) >=
@@ -124,7 +132,7 @@ export async function completeUpload(actor: Actor, raw: unknown) {
     where: { id, ownerId: actor.id, status: "QUARANTINED" },
   });
   if (!a) throw new AppError(404, "Upload not found.");
-  await authorizeResource(actor, a.resourceType, a.resourceId, a.institutionId);
+  await authorizeResource(actor, a.resourceType, a.resourceId, a.institutionId, true);
   const head = await storage.send(
     new HeadObjectCommand({ Bucket: privateBucket, Key: a.objectKey }),
   );
@@ -163,4 +171,4 @@ export async function downloadAttachment(actor: Actor, id: string) {
 }
 
 export async function listAttachments(actor:Actor,resourceType:string,resourceId:string,institutionId:string){await authorizeResource(actor,resourceType,resourceId,institutionId);return db.attachment.findMany({where:{resourceType,resourceId,institutionId},select:{id:true,status:true,declaredType:true,size:true,createdAt:true},orderBy:{createdAt:'desc'}});}
-export async function uploadBytes(actor:Actor,id:string,request:Request){const asset=await db.attachment.findFirst({where:{id,ownerId:actor.id,status:'QUARANTINED'}});if(!asset)throw new AppError(404,'Upload not found.');await authorizeResource(actor,asset.resourceType,asset.resourceId,asset.institutionId);const reader=request.body?.getReader();if(!reader)throw new AppError(400,'File body required.');let size=0;const chunks:Uint8Array[]=[];while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>asset.size||size>10*1024*1024){await reader.cancel();throw new AppError(413,'File exceeds size limit.');}chunks.push(part.value);}if(size!==asset.size)throw new AppError(400,'File size mismatch.');await storage.send(new PutObjectCommand({Bucket:privateBucket,Key:asset.objectKey,Body:Buffer.concat(chunks),ContentType:asset.declaredType}));return completeUpload(actor,{id});}
+export async function uploadBytes(actor:Actor,id:string,request:Request){const asset=await db.attachment.findFirst({where:{id,ownerId:actor.id,status:'QUARANTINED'}});if(!asset)throw new AppError(404,'Upload not found.');await authorizeResource(actor,asset.resourceType,asset.resourceId,asset.institutionId,true);const reader=request.body?.getReader();if(!reader)throw new AppError(400,'File body required.');let size=0;const chunks:Uint8Array[]=[];while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>asset.size||size>10*1024*1024){await reader.cancel();throw new AppError(413,'File exceeds size limit.');}chunks.push(part.value);}if(size!==asset.size)throw new AppError(400,'File size mismatch.');await storage.send(new PutObjectCommand({Bucket:privateBucket,Key:asset.objectKey,Body:Buffer.concat(chunks),ContentType:asset.declaredType}));return completeUpload(actor,{id});}
