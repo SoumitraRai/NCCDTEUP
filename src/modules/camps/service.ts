@@ -269,11 +269,18 @@ export async function getCamp(actor: Actor, id: string) {
   const row = await db.camp.findFirst({ where: { AND: [{ id }, campScope(actor)] }, include });
   if (!row) throw new AppError(404, "Camp not found.");
   const camp = present(row, istDate());
-  const [rounds, events, files] = await Promise.all([
+  const [rounds, events, files, budgetRows] = await Promise.all([
     db.campReportSubmission.findMany({ where: { campId: id }, orderBy: { round: "asc" } }),
     db.auditEvent.findMany({ where: { resourceId: id, action: { startsWith: "camp." } }, orderBy: { createdAt: "asc" } }),
     reportFiles(id),
+    db.campBudget.findMany({ where: { campId: id }, orderBy: { createdAt: "asc" }, select: { stage: true, status: true, demandedPaise: true, sanctionedPaise: true } }),
   ]);
+  // Per stage, the open budget or else the latest (summary for the sheet).
+  const budgets = (["INITIAL", "REVISED", "FINAL"] as const).flatMap((stage) => {
+    const list = budgetRows.filter((b) => b.stage === stage);
+    const b = list.find((x) => ["PENDING", "RETURNED", "APPROVED"].includes(x.status)) ?? list.at(-1);
+    return b ? [{ stage, status: b.status, demandedPaise: b.demandedPaise.toString(), sanctionedPaise: b.sanctionedPaise?.toString() ?? null }] : [];
+  });
   const people = new Map((await db.user.findMany({ where: { id: { in: [...new Set(events.map((e) => e.actorId))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const last = rounds.at(-1);
   const host = handles(actor, row);
@@ -281,6 +288,7 @@ export async function getCamp(actor: Actor, id: string) {
   return {
     ...camp,
     files,
+    budgets,
     history: events.map((e) => ({ action: e.action.slice(5), by: people.get(e.actorId) ?? "", at: e.createdAt, remarks: (e.details as { remarks?: string; reason?: string }).remarks ?? (e.details as { reason?: string }).reason ?? "" })),
     rounds: rounds.map((r) => ({ round: r.round, at: r.createdAt, decision: r.decision, remarks: r.remarks })),
     returnRemarks: camp.report === "RETURNED" ? (last?.remarks ?? "") : "",

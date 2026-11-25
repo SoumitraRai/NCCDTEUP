@@ -5,12 +5,16 @@ import { dict } from "./i18n";
 import { Drawer } from "./ui";
 import { AttachmentLink, EvidenceUpload } from "./bill-actions";
 import { CampPlannerActions, CampReportForm, CampReview } from "./camp-actions";
+import { BudgetStatus } from "./budget-sheet";
+import { inr } from "./format";
+import { ButtonLink } from "./ui";
 type Camp = Awaited<ReturnType<typeof getCamp>>;
 export const campDates = (c: { start: string; end: string }, locale: string) => dict(locale).camps.range(day(c.start, locale), day(c.end, locale));
 // One camp in the right-hand sheet: facts, seats against attendance, the
 // report and its history. Actions appear only for those who may take them.
 export function CampDetail({ camp, locale }: { camp: Camp; locale: string }) {
   const t = dict(locale).camps;
+  const B = dict(locale).budgets;
   const footer = camp.canReview ? <CampReview id={camp.id} version={camp.version} /> : camp.canEdit ? <CampPlannerActions id={camp.id} version={camp.version} /> : undefined;
   const reportNote =
     camp.report === "NOT_YET" ? t.notYet(day(camp.reportDue, locale))
@@ -84,6 +88,27 @@ export function CampDetail({ camp, locale }: { camp: Camp; locale: string }) {
                 <EvidenceUpload resourceId={camp.id} institutionId="" resourceType="camp" purpose="REPORT" label={t.uploadReport} />
                 <CampReportForm id={camp.id} version={camp.version} seats={camp.seats} />
               </div>
+            )}
+          </section>
+        )}
+        {camp.state !== "CANCELLED" && (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-[13px] text-muted">{B.campSection}</h3>
+              <ButtonLink query={{ budget: camp.id, open: null }} variant="ghost">{B.open}</ButtonLink>
+            </div>
+            {camp.budgets.length === 0 ? (
+              <p className="text-[13.5px] text-muted">{B.campNone}</p>
+            ) : (
+              <ul className="divide-y rounded-lg border text-[13.5px]">
+                {camp.budgets.map((b) => (
+                  <li key={b.stage} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                    <span className="font-medium">{B.stageBudget(B.stages[b.stage])}</span>
+                    <span className="tabular-nums">{inr(b.demandedPaise)}{b.sanctionedPaise ? ` → ${inr(b.sanctionedPaise)}` : ""}</span>
+                    <BudgetStatus status={b.status} locale={locale} />
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
         )}

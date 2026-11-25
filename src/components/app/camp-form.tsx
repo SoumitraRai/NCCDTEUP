@@ -4,16 +4,22 @@ import { useState } from "react";
 import type { campOptions } from "@/modules/camps/service";
 import { Alert, Button, Drawer, Field, api, inputClass, useQueryState } from "./ui";
 import { useT } from "./i18n-client";
+import type { Head } from "@/modules/camps/budget-rules";
+import { BudgetFields, draftPayload, newDraft } from "./budget-fields";
 type Options = Awaited<ReturnType<typeof campOptions>>;
 export type CampEdit = { id: string; version: number; unitId: string; catcNo: string; location: string; start: string; end: string; plannedStrength: number; briefing: string; details: string; seats: { unitId: string; seats: number }[] };
 const DAY = 86_400_000;
 const days = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / DAY) + 1;
 // Plan a camp or, with `edit`, change an upcoming one. The server checks
 // every rule again (group, seats, training year, dates).
-export function CampForm({ options, edit }: { options: Options; edit?: CampEdit }) {
+// A new plan may also carry its initial budget, submitted with it.
+export function CampForm({ options, edit, rates, synthetic = false }: { options: Options; edit?: CampEdit; rates?: Record<Head, string | null>; synthetic?: boolean }) {
   const router = useRouter();
   const { set } = useQueryState();
-  const t = useT().camps;
+  const all = useT();
+  const t = all.camps;
+  const [withBudget, setWithBudget] = useState(false);
+  const [budget, setBudget] = useState(() => newDraft(null));
   const [unitId, setUnitId] = useState(edit?.unitId ?? (options.hosts.length === 1 ? options.hosts[0].id : ""));
   const [catcNo, setCatcNo] = useState(edit?.catcNo ?? "");
   const [location, setLocation] = useState(edit?.location ?? "");
@@ -50,7 +56,9 @@ export function CampForm({ options, edit }: { options: Options; edit?: CampEdit 
         await api(`camps/${edit.id}`, "PATCH", { ...body, version: edit.version });
         set({ edit: null });
       } else {
-        const made = await api<{ id: string }>("camps", "POST", { unitId, ...body });
+        // Cadets default to the seats allocated when left blank.
+        const initial = withBudget ? { ...draftPayload(budget), cadets: budget.cadets || String(allocated) } : undefined;
+        const made = await api<{ id: string }>("camps", "POST", { unitId, ...body, ...(initial ? { budget: initial } : {}) });
         set({ new: null, open: made.id });
       }
       router.refresh();
@@ -115,6 +123,16 @@ export function CampForm({ options, edit }: { options: Options; edit?: CampEdit 
         <Field label={t.details}>
           <textarea rows={3} className={`${inputClass} h-auto py-2`} value={details} onChange={(e) => setDetails(e.target.value)} maxLength={2000} />
         </Field>
+        {!edit && rates && (
+          <section className="space-y-4 rounded-lg border p-4">
+            <label className="flex items-center gap-2.5 text-[13.5px] font-medium">
+              <input type="checkbox" checked={withBudget} onChange={(e) => setWithBudget(e.target.checked)} />
+              {all.budgets.planBudget}
+            </label>
+            <p className="text-xs text-muted">{all.budgets.planBudgetHint}</p>
+            {withBudget && <BudgetFields draft={{ ...budget, cadets: budget.cadets || (allocated ? String(allocated) : "") }} onChange={setBudget} days={span && span > 0 ? span : null} rates={rates} synthetic={synthetic} />}
+          </section>
+        )}
       </form>
     </Drawer>
   );

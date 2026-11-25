@@ -34,12 +34,17 @@ type Timeline = {
   cycle: number;
   steps: { stageCode: string; outcome: string; actor: string; system: boolean; remarks: string; at: Date | string; cycle: number }[];
 };
-// TD steps: those before the start are not applicable; the TD waits at
-// `stageIndex` while pending and stops there when returned or rejected.
+// Chain steps (TD, camp budgets): those before the start are not applicable;
+// the request waits at `stageIndex` while pending and stops there when
+// returned or rejected.
 const tdLabels: [string, Label][] = [["GP_CDR", "gpCdr"], ["BRANCH", "branch"], ["DIR", "dir"], ["DDG", "ddg"], ["ADG", "adg"]];
-export function tdStations(r: { status: string; stageIndex: number; startIndex: number }, t?: Timeline | null, vacant = false): Station[] {
-  const top = r.startIndex >= tdLabels.length;
-  const stations: Station[] = tdLabels.map(([key, label], i) => ({
+const budgetLabels: [string, Label][] = [["GP_CDR", "gpCdr"], ["DDG", "ddg"]];
+type ChainRow = { status: string; stageIndex: number; startIndex: number };
+export const tdStations = (r: ChainRow, t?: Timeline | null, vacant = false) => chainStations(tdLabels, r, t, vacant);
+export const budgetStations = (r: ChainRow, t?: Timeline | null) => chainStations(budgetLabels, r, t, false);
+function chainStations(labels: [string, Label][], r: ChainRow, t: Timeline | null | undefined, vacant: boolean): Station[] {
+  const top = r.startIndex >= labels.length;
+  const stations: Station[] = labels.map(([key, label], i) => ({
     key,
     label,
     state:

@@ -10,7 +10,12 @@ import { day } from "@/components/app/format";
 import { ButtonLink, ListControls, OpenLink, OpenRow } from "@/components/app/ui";
 import { CampForm } from "@/components/app/camp-form";
 import { CampDetail, campDates } from "@/components/app/camp-detail";
-const VIEWS = ["timeline", "strength", "reports"] as const;
+import { BUDGET_QUEUES, budgetOptions, currentRates, getCampBudgets, listBudgets, type BudgetQueue, type BudgetRow } from "@/modules/camps/budgets";
+import { BudgetPicker, BudgetSheet, BudgetStatus } from "@/components/app/budget-sheet";
+import { BudgetForm } from "@/components/app/budget-actions";
+import { RouteStrip, budgetStations } from "@/components/app/route";
+import { inr } from "@/components/app/format";
+const VIEWS = ["timeline", "strength", "reports", "budgets"] as const;
 const QUEUES = ["OVERDUE", "DUE", "SUBMITTED", "RETURNED", "ACCEPTED"] as const;
 const STATES = ["UPCOMING", "CURRENT", "COMPLETED", "CANCELLED"] as const;
 const DAY = 86_400_000;
@@ -31,6 +36,14 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
   const [list, strength, options] = await Promise.all([listCamps(actor, filter), campStrength(actor, { year: sp.year, group: sp.group }), campOptions(actor)]);
   const queue = QUEUES.find((q) => q === sp.report) ?? QUEUES.find((q) => list.reports[q] > 0) ?? "OVERDUE";
   const open = sp.open ? await getCamp(actor, sp.open).catch(() => null) : null;
+  // Budgets: the queue list, the "New budget" picker, and one camp's budgets.
+  const bqueue: BudgetQueue = BUDGET_QUEUES.find((q) => q === sp.bq) ?? "pending";
+  const [budgets, picks, campBudgets, planRates] = await Promise.all([
+    view === "budgets" ? listBudgets(actor, { year: sp.year, q: sp.q, queue: bqueue }) : null,
+    view === "budgets" || sp.pick ? budgetOptions(actor, sp.year) : null,
+    sp.budget ? getCampBudgets(actor, sp.budget).catch(() => null) : null,
+    sp.new && options.canPlan ? currentRates() : null,
+  ]);
   const href = (updates: Record<string, string | null>) => {
     const next = new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => !!e[1]));
     for (const [k, v] of Object.entries(updates)) if (v) next.set(k, v); else next.delete(k);
@@ -51,11 +64,18 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
           <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
           <p className="mt-1 text-muted">{t.intro(list.year)}</p>
         </div>
-        {options.canPlan && (
-          <ButtonLink query={{ new: "1", open: null, edit: null }} variant="primary">
-            <Plus size={16} /> {t.plan}
-          </ButtonLink>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {view === "budgets" && (picks?.length || options.canPlan) ? (
+            <ButtonLink query={{ pick: "1", open: null, budget: null }} variant="secondary">
+              <Plus size={16} /> {T.budgets.newBudget}
+            </ButtonLink>
+          ) : null}
+          {options.canPlan && (
+            <ButtonLink query={{ new: "1", open: null, edit: null }} variant="primary">
+              <Plus size={16} /> {t.plan}
+            </ButtonLink>
+          )}
+        </div>
       </div>
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {tiles.map(([label, n, link, selected], i) => (
@@ -100,7 +120,28 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
           <Reports camps={list.camps.filter((c) => c.report === queue)} today={list.today} locale={locale} />
         </>
       )}
-      {sp.new && options.canPlan && <CampForm options={options} />}
+      {view === "budgets" && budgets && <Budgets data={budgets} queue={bqueue} href={href} locale={locale} />}
+      {sp.pick && picks && <BudgetPicker options={picks} locale={locale} canPlan={options.canPlan} />}
+      {campBudgets && !sp.prepare && <BudgetSheet data={campBudgets} locale={locale} />}
+      {campBudgets && sp.prepare && (() => {
+        const stage = campBudgets.stages.find((s) => s.stage === sp.prepare);
+        const edit = sp.editBudget && stage?.budget?.id === sp.editBudget && stage.budget.canEdit ? stage.budget : undefined;
+        if (!stage || (!edit && !stage.canPrepare)) return <BudgetSheet data={campBudgets} locale={locale} />;
+        return (
+          <BudgetForm
+            key={`${stage.stage}-${edit?.version ?? 0}`}
+            campId={campBudgets.camp.id}
+            catcNo={T.camps.catc(campBudgets.camp.catcNo)}
+            stage={stage.stage}
+            days={campBudgets.camp.days}
+            rates={campBudgets.rates}
+            synthetic={campBudgets.syntheticRates}
+            cadets={stage.stage === "FINAL" ? (campBudgets.defaults.attended ?? campBudgets.defaults.cadets) : campBudgets.defaults.cadets}
+            edit={edit}
+          />
+        );
+      })()}
+      {sp.new && options.canPlan && <CampForm options={options} rates={planRates?.rates} synthetic={planRates?.synthetic ?? false} />}
       {open && sp.edit && open.canEdit ? (
         <CampForm key={open.id} options={options} edit={{ id: open.id, version: open.version, unitId: open.unit.id, catcNo: open.catcNo, location: open.location, start: open.start, end: open.end, plannedStrength: open.plannedStrength, briefing: open.briefing ?? "", details: open.details, seats: open.seats }} />
       ) : (
@@ -306,6 +347,134 @@ function Reports({ camps, today, locale }: { camps: Camp[]; today: string; local
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// Budgets view: tiles, the queues, and the finals still due.
+function Budgets({ data, queue, href, locale }: { data: Awaited<ReturnType<typeof listBudgets>>; queue: BudgetQueue; href: (u: Record<string, string | null>) => string; locale: string }) {
+  const T = dict(locale);
+  const t = T.budgets;
+  const tiles: [string, string, BudgetQueue][] = [
+    [t.tiles.pending, String(data.counts.pending), "pending"],
+    [t.tiles.process, String(data.counts.process), "process"],
+    [t.tiles.sanctioned, inr(data.initialSanctionedPaise), "disposed"],
+    [t.tiles.due, String(data.counts.due), "due"],
+  ];
+  const opener = (campId: string) => href({ budget: campId, prepare: null, editBudget: null, open: null, pick: null });
+  return (
+    <div className="space-y-5">
+      <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {tiles.map(([label, v, q]) => (
+          <li key={label}>
+            <Link href={href({ bq: q === "pending" ? null : q, budget: null })} scroll={false} aria-current={q === queue ? "true" : undefined}
+              className={`block rounded-xl border px-4 py-3 ${q === queue ? "border-primary bg-primary-soft ring-1 ring-primary" : "bg-surface hover:bg-surface-2/70"}`}>
+              <p className={`text-[13px] ${q === queue ? "font-medium text-primary" : "text-muted"}`}>{label}</p>
+              <p className={`mt-1 text-2xl font-semibold tabular-nums ${q === "due" && data.counts.due > 0 ? "text-warning" : ""}`}>{v}</p>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <nav aria-label={t.view} className="inline-flex flex-wrap rounded-md border bg-surface-2 p-0.5">
+        {BUDGET_QUEUES.map((q) => (
+          <Link key={q} href={href({ bq: q === "pending" ? null : q, budget: null })} scroll={false} aria-current={q === queue ? "page" : undefined}
+            className={`rounded px-3 py-1.5 text-[13px] font-medium ${q === queue ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"}`}>
+            {t.queues[q]} <span className="ml-1 text-muted">{data.counts[q]}</span>
+          </Link>
+        ))}
+      </nav>
+      {queue === "due" ? (
+        data.due.length === 0 ? (
+          <Empty title={t.none} hint={t.noneHint} />
+        ) : (
+          <div className="overflow-x-auto rounded-xl border bg-surface">
+            <table className="w-full min-w-[720px] text-left">
+              <thead className="bg-surface-2 text-[13px] text-muted">
+                <tr>
+                  <th className="px-5 py-2.5 font-medium">{t.camp}</th>
+                  <th className="px-5 py-2.5 font-medium">{T.camps.unit}</th>
+                  <th className="px-5 py-2.5 font-medium">{t.ended}</th>
+                  <th className="px-5 py-2.5 font-medium">{t.finalStatus}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.due.map((c) => (
+                  <tr key={c.id} className="border-t">
+                    <td className="px-5 py-3"><Link href={opener(c.id)} scroll={false} className="font-medium hover:text-primary">{T.camps.catc(c.catcNo)}</Link><p className="text-[13px] text-muted">{c.location}</p></td>
+                    <td className="px-5 py-3">{c.unit}<p className="text-[13px] text-muted">{c.group}</p></td>
+                    <td className="px-5 py-3 whitespace-nowrap">{day(c.end, locale)}<p className={`text-[13px] ${c.daysSince > 30 ? "font-medium text-warning" : "text-muted"}`}>{t.daysSince(c.daysSince)}</p></td>
+                    <td className="px-5 py-3">{c.final ? <BudgetStatus status={c.final} locale={locale} /> : <span className="text-[13px] text-muted">{t.notStarted}</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : data.rows.length === 0 ? (
+        <Empty title={t.none} hint={t.noneHint} />
+      ) : (
+        <BudgetTable rows={data.rows} opener={opener} locale={locale} />
+      )}
+    </div>
+  );
+}
+function BudgetTable({ rows, opener, locale }: { rows: BudgetRow[]; opener: (campId: string) => string; locale: string }) {
+  const T = dict(locale);
+  const t = T.budgets;
+  return (
+    <div className="overflow-hidden rounded-xl border bg-surface">
+      <ul className="divide-y md:hidden">
+        {rows.map((r) => (
+          <li key={r.id} className="px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <Link href={opener(r.campId)} scroll={false} className="font-medium hover:text-primary">{T.camps.catc(r.catcNo)} · {t.stages[r.stage]}</Link>
+              <BudgetStatus status={r.status} locale={locale} />
+            </div>
+            <p className="text-[13px] text-muted">{r.unit}, {r.group}</p>
+            <p className="text-[13px] tabular-nums">{t.demanded} {inr(r.demandedPaise)}{r.sanctionedPaise ? ` · ${t.sanctioned} ${inr(r.sanctionedPaise)}` : ""}</p>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[900px] text-left">
+          <thead className="bg-surface-2 text-[13px] text-muted">
+            <tr>
+              <th className="px-5 py-2.5 font-medium">{t.camp}</th>
+              <th className="px-5 py-2.5 font-medium">{t.stage}</th>
+              <th className="px-5 py-2.5 text-right font-medium">{t.demanded}</th>
+              <th className="px-5 py-2.5 text-right font-medium">{t.sanctioned}</th>
+              <th className="px-5 py-2.5 font-medium">{t.route}</th>
+              <th className="px-5 py-2.5 font-medium">{T.common.status}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-t">
+                <td className="px-5 py-3">
+                  <Link href={opener(r.campId)} scroll={false} className="font-medium hover:text-primary">{T.camps.catc(r.catcNo)}</Link>
+                  <p className="text-[13px] text-muted">{r.unit}, {r.group}</p>
+                </td>
+                <td className="px-5 py-3">{t.stages[r.stage]}</td>
+                <td className="px-5 py-3 text-right tabular-nums">{inr(r.demandedPaise)}</td>
+                <td className="px-5 py-3 text-right tabular-nums">{r.sanctionedPaise ? inr(r.sanctionedPaise) : "–"}</td>
+                <td className="px-5 py-3"><RouteStrip stations={budgetStations(r)} locale={locale} /></td>
+                <td className="px-5 py-3">
+                  <BudgetStatus status={r.status} locale={locale} />
+                  {r.returnedToMe && <p className="mt-1 text-xs font-medium text-warning">{t.status.RETURNED}</p>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+function Empty({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="rounded-xl border bg-surface px-6 py-14 text-center">
+      <p className="font-medium">{title}</p>
+      <p className="mt-1 text-muted">{hint}</p>
     </div>
   );
 }
