@@ -61,8 +61,12 @@ async function visibleCamp(actor: Actor, campId: string, tx: Tx | typeof db = db
   return camp;
 }
 const stateOf = (c: { status: string; startDate: Date; endDate: Date }) => campState({ status: c.status, start: ymd(c.startDate), end: ymd(c.endDate) }, istDate());
-const sanctionedStages = async (tx: Tx | typeof db, campId: string) =>
-  Object.fromEntries((await tx.campBudget.findMany({ where: { campId, status: "APPROVED" }, select: { stage: true } })).map((b) => [b.stage, true])) as Partial<Record<Stage, boolean>>;
+// Which stages of a camp are sanctioned and which are still in the chain.
+const stageInfo = (budgets: { stage: string; status: string }[]) => ({
+  sanctioned: Object.fromEntries(budgets.filter((b) => b.status === "APPROVED").map((b) => [b.stage, true])) as Partial<Record<Stage, boolean>>,
+  open: Object.fromEntries(budgets.filter((b) => b.status === "PENDING" || b.status === "RETURNED").map((b) => [b.stage, true])) as Partial<Record<Stage, boolean>>,
+});
+const campStages = async (tx: Tx | typeof db, campId: string) => stageInfo(await tx.campBudget.findMany({ where: { campId, status: { in: OPEN } }, select: { stage: true, status: true } }));
 const snapshot = (b: { stage: string; cadets: number; anos: number; staff: number; days: number; demandedPaise: bigint; note: string }, lines: z.infer<typeof line>[]) => ({
   stage: b.stage,
   note: b.note,
@@ -83,7 +87,7 @@ export type BudgetInput = { stage: Stage; amount: bigint; cadets: number; anos: 
 export async function prepareBudget(tx: Tx, actor: Actor, camp: { id: string; status: string; startDate: Date; endDate: Date; unitId: string; groupId: string; directorateId: string }, input: BudgetInput) {
   const lines = breakup(input.amount, input.lines);
   if (!handles(actor, camp)) throw new AppError(403, "Only the host unit or its group can prepare this camp's budget.");
-  const closed = stageClosed(input.stage, stateOf(camp), await sanctionedStages(tx, camp.id));
+  const closed = stageClosed(input.stage, stateOf(camp), await campStages(tx, camp.id));
   if (closed) throw new AppError(409, closed);
   if (await tx.campBudget.findFirst({ where: { campId: camp.id, stage: input.stage, status: { in: OPEN } } })) throw new AppError(409, "This stage already has a budget.");
   let budget = await tx.campBudget.create({
@@ -249,7 +253,7 @@ export async function getCampBudgets(actor: Actor, campId: string) {
   const all = await db.campBudget.findMany({ where: { campId }, include, orderBy: { createdAt: "asc" } });
   const shown = await present(actor, all);
   const mine = new Set(await awaitingMe(actor));
-  const sanctioned = Object.fromEntries(shown.filter((b) => b.status === "APPROVED").map((b) => [b.stage, true])) as Partial<Record<Stage, boolean>>;
+  const info = stageInfo(shown);
   const state = stateOf(camp);
   const { by, synthetic } = await rates(camp.startDate);
   const seats = await db.campAllocation.findMany({ where: { campId }, select: { seats: true, attended: true } });
@@ -258,7 +262,7 @@ export async function getCampBudgets(actor: Actor, campId: string) {
       const list = shown.filter((b) => b.stage === stage);
       const b = list.find((x) => OPEN.includes(x.status)) ?? list.at(-1) ?? null;
       const host = handles(actor, camp);
-      const closed = stageClosed(stage, state, sanctioned);
+      const closed = stageClosed(stage, state, info);
       return {
         stage,
         budget: b && {
@@ -293,4 +297,25 @@ export async function budgetInbox(actor: Actor) {
   if (!ids.length) return [];
   const rows = await db.campBudget.findMany({ where: { id: { in: ids }, camp: campScope(actor) }, include });
   return (await present(actor, rows)).sort((a, b) => +a.waitingSince - +b.waitingSince);
+}
+// Camps of the year this actor may prepare a budget for right now, with the
+// stage that is open ("New budget"). Cancelled camps never appear.
+export async function budgetOptions(actor: Actor, yearLabel?: string) {
+  const { year } = await resolveTrainingYear(yearLabel);
+  const camps = await db.camp.findMany({
+    where: { AND: [campScope(actor), { trainingYear: year.label, status: "PLANNED" }] },
+    include: { unit: { select: { name: true } }, budgets: { where: { status: { in: OPEN } }, select: { stage: true, status: true } } },
+    orderBy: { startDate: "asc" },
+  });
+  return camps.flatMap((c) => {
+    if (!handles(actor, c)) return [];
+    const info = stageInfo(c.budgets);
+    const stage = STAGES.find((s) => !stageClosed(s, stateOf(c), info) && !c.budgets.some((b) => b.stage === s));
+    return stage ? [{ id: c.id, catcNo: c.catcNo, location: c.location, unit: c.unit.name, start: ymd(c.startDate), end: ymd(c.endDate), stage }] : [];
+  });
+}
+// Today's reference rates per head (the plan form, before a camp exists).
+export async function currentRates() {
+  const { by, synthetic } = await rates(new Date(`${istDate()}T00:00:00Z`));
+  return { rates: Object.fromEntries(HEADS.map((h) => [h.head, by.get(h.head)?.toString() ?? null])) as Record<Head, string | null>, synthetic };
 }

@@ -1,12 +1,13 @@
 // Hindi for messages the server sends back to the dashboard. Keys are the
 // exact English text; anything not listed is returned in English.
 const exact: Record<string, string> = {
+  "Wait for the initial budget to be decided.": "प्रारंभिक बजट पर निर्णय की प्रतीक्षा करें।",
+  "Prepare the initial budget first; a revised one follows its sanction.": "पहले प्रारंभिक बजट तैयार करें; संशोधित बजट उसकी स्वीकृति के बाद आता है।",
   "The initial budget is prepared before the camp starts.": "प्रारंभिक बजट कैंप शुरू होने से पहले बनाया जाता है।",
   "A revised budget is prepared before the camp ends.": "संशोधित बजट कैंप समाप्त होने से पहले बनाया जाता है।",
   "Enter the amount demanded.": "माँगी गई राशि लिखें।",
   "Keep the note under 1000 characters.": "टिप्पणी 1000 अक्षरों से कम रखें।",
   "This camp is cancelled.": "यह कैंप रद्द है।",
-  "The initial budget must be sanctioned first.": "पहले प्रारंभिक बजट स्वीकृत होना चाहिए।",
   "The final budget is prepared after the camp ends.": "अंतिम बजट कैंप समाप्त होने के बाद बनाया जाता है।",
   "Enter an amount in rupees, e.g. 1500": "राशि रुपये में लिखें, जैसे 1500",
   "Numbers cannot be negative.": "संख्याएँ ऋणात्मक नहीं हो सकतीं।",

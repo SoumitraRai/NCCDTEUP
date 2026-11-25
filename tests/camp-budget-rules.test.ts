@@ -2,20 +2,23 @@ import { describe, it, expect } from "vitest";
 import { reference, rupees, stageClosed } from "../src/modules/camps/budget-rules";
 // Stage windows, reference figures and exact rupee parsing for camp budgets.
 describe("camp budget stages", () => {
+  const none = { sanctioned: {}, open: {} };
   it("initial before the camp starts", () => {
-    expect(stageClosed("INITIAL", "UPCOMING", {})).toBeNull();
-    expect(stageClosed("INITIAL", "CURRENT", {})).toBe("The initial budget is prepared before the camp starts.");
-    expect(stageClosed("INITIAL", "COMPLETED", {})).toBe("The initial budget is prepared before the camp starts.");
-    expect(stageClosed("INITIAL", "CANCELLED", {})).toBe("This camp is cancelled.");
+    expect(stageClosed("INITIAL", "UPCOMING", none)).toBeNull();
+    expect(stageClosed("INITIAL", "CURRENT", none)).toBe("The initial budget is prepared before the camp starts.");
+    expect(stageClosed("INITIAL", "COMPLETED", none)).toBe("The initial budget is prepared before the camp starts.");
+    expect(stageClosed("INITIAL", "CANCELLED", none)).toBe("This camp is cancelled.");
   });
-  it("revised before the camp ends, final after, both after the initial is sanctioned", () => {
-    expect(stageClosed("REVISED", "CURRENT", {})).toBe("The initial budget must be sanctioned first.");
-    expect(stageClosed("REVISED", "CURRENT", { INITIAL: true })).toBeNull();
-    expect(stageClosed("REVISED", "UPCOMING", { INITIAL: true })).toBeNull();
-    expect(stageClosed("REVISED", "COMPLETED", { INITIAL: true })).toBe("A revised budget is prepared before the camp ends.");
-    expect(stageClosed("FINAL", "CURRENT", { INITIAL: true })).toBe("The final budget is prepared after the camp ends.");
-    expect(stageClosed("FINAL", "COMPLETED", { INITIAL: true })).toBeNull();
-    expect(stageClosed("FINAL", "COMPLETED", {})).toBe("The initial budget must be sanctioned first.");
+  it("revised before the end: after a sanctioned initial, or once started without one", () => {
+    expect(stageClosed("REVISED", "UPCOMING", { sanctioned: { INITIAL: true }, open: {} })).toBeNull();
+    expect(stageClosed("REVISED", "UPCOMING", none)).toBe("Prepare the initial budget first; a revised one follows its sanction.");
+    expect(stageClosed("REVISED", "CURRENT", none)).toBeNull();
+    expect(stageClosed("REVISED", "CURRENT", { sanctioned: {}, open: { INITIAL: true } })).toBe("Wait for the initial budget to be decided.");
+    expect(stageClosed("REVISED", "COMPLETED", { sanctioned: { INITIAL: true }, open: {} })).toBe("A revised budget is prepared before the camp ends.");
+  });
+  it("final after the camp ends, whatever came before", () => {
+    expect(stageClosed("FINAL", "COMPLETED", none)).toBeNull();
+    expect(stageClosed("FINAL", "CURRENT", { sanctioned: { INITIAL: true }, open: {} })).toBe("The final budget is prepared after the camp ends.");
   });
 });
 describe("reference figures", () => {

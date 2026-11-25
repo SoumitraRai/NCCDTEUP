@@ -70,8 +70,8 @@ describe("camp budgets", () => {
     await expect(budget(c, "INITIAL", "co", { amount: "500000" })).rejects.toThrow("The breakup adds up to ₹578000, not the ₹500000 demanded.");
     await budget(c);
     await expect(budget(c, "INITIAL", "ao")).rejects.toThrow("This stage already has a budget.");
-    await expect(budget(c, "REVISED")).rejects.toThrow("The initial budget must be sanctioned first.");
-    await expect(budget(c, "FINAL")).rejects.toThrow("The initial budget must be sanctioned first.");
+    await expect(budget(c, "REVISED")).rejects.toThrow("Wait for the initial budget to be decided.");
+    await expect(budget(c, "FINAL")).rejects.toThrow("The final budget is prepared after the camp ends.");
   });
   it("initial before the start, revised before the end, final after; each after the initial is sanctioned", async () => {
     const late = await camp();
@@ -93,6 +93,18 @@ describe("camp budgets", () => {
     expect((await listBudgets(await as("admin"), { queue: "due" })).due.map((d) => d.id)).not.toContain(c);
     const view = await getCampBudgets(await as("co"), c);
     expect(view.stages.map((s) => s.budget?.stage)).toEqual(["INITIAL", "REVISED", "FINAL"]);
+  });
+  it("a camp that started without an initial can still file revised and final budgets", async () => {
+    const c = await camp();
+    await when(c, "CURRENT");
+    expect((await budget(c, "REVISED")).status).toBe("PENDING");
+    const other = await camp();
+    await when(other, "COMPLETED");
+    expect((await budget(other, "FINAL")).status).toBe("PENDING");
+    const waiting = await camp();
+    await budget(waiting);
+    await when(waiting, "CURRENT");
+    await expect(budget(waiting, "REVISED")).rejects.toThrow("Wait for the initial budget to be decided.");
   });
   it("return, edit and resubmit by the preparer only; cancel, then prepare again", async () => {
     const c = await camp();

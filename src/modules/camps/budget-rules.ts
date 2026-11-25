@@ -30,15 +30,20 @@ export const rupees = z
     const [whole, frac = ""] = v.split(".");
     return BigInt(whole) * 100n + BigInt(frac.padEnd(2, "0"));
   });
-// Whether a stage may be prepared now, given the camp and the stages so far.
-// Returns the reason it may not, or null.
-export function stageClosed(stage: Stage, camp: CampState, sanctioned: Partial<Record<Stage, boolean>>): string | null {
+// Whether a stage may be prepared now, given the camp and the budgets so far
+// (`sanctioned`: approved stages; `open`: stages pending or returned).
+// Returns the reason it may not, or null. User, 2026-11-25: initial before
+// the camp starts; revised before it ends, after a sanctioned initial or,
+// once the camp has started, without one; final after it ends, always.
+type Stages = Partial<Record<Stage, boolean>>;
+export function stageClosed(stage: Stage, camp: CampState, s: { sanctioned: Stages; open: Stages }): string | null {
   if (camp === "CANCELLED") return "This camp is cancelled.";
-  // User, 2026-11-25: initial before the camp starts, revised before it ends.
   if (stage === "INITIAL") return camp === "UPCOMING" ? null : "The initial budget is prepared before the camp starts.";
-  if (!sanctioned.INITIAL) return "The initial budget must be sanctioned first.";
-  if (stage === "REVISED") return camp === "COMPLETED" ? "A revised budget is prepared before the camp ends." : null;
-  return camp === "COMPLETED" ? null : "The final budget is prepared after the camp ends.";
+  if (stage === "FINAL") return camp === "COMPLETED" ? null : "The final budget is prepared after the camp ends.";
+  if (camp === "COMPLETED") return "A revised budget is prepared before the camp ends.";
+  if (s.sanctioned.INITIAL) return null;
+  if (s.open.INITIAL) return "Wait for the initial budget to be decided.";
+  return camp === "CURRENT" ? null : "Prepare the initial budget first; a revised one follows its sanction.";
 }
 // Reference figure for a head: quantity × the dated rate, or null where the
 // head has no rate (typed only) or no rate is set.
