@@ -1,7 +1,7 @@
 import { dict } from "./i18n";
 // One status vocabulary for every workflow.
 const tone = {
-  neutral: "bg-surface-2 text-muted",
+  neutral: "bg-surface-2 text-ink/80",
   info: "bg-info/10 text-info",
   warning: "bg-warning/12 text-warning",
   success: "bg-success/12 text-success",

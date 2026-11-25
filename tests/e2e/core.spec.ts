@@ -282,8 +282,12 @@ test("AO requests TD, it passes all five steps, CO sends a typed-in PI", async (
     await expect(page).toHaveURL(/dashboard/);
     return page;
   };
-  const axe = async (page: import("@playwright/test").Page) =>
+  // Waits for the drawer's slide-in (mid-animation colours are blended);
+  // endless animations such as spinners are ignored.
+  const axe = async (page: import("@playwright/test").Page) => {
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
     expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze()).violations).toEqual([]);
+  };
   const ao = await signIn("ao", 1);
   await ao.getByRole("link", { name: "Temporary duty" }).click();
   await ao.getByRole("link", { name: "New TD" }).click();
@@ -321,5 +325,84 @@ test("AO requests TD, it passes all five steps, CO sends a typed-in PI", async (
   await co.getByRole("button", { name: "Send for approval" }).click();
   await expect(co.getByRole("dialog")).toContainText(`Sub E2E PI ${run}`);
   await expect(co.getByRole("dialog")).toContainText("No Sampark account");
+  await axe(co);
+});
+test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the directorate sees it", async ({ browser }) => {
+  test.setTimeout(150_000);
+  const run = Date.now();
+  const catc = `E2E-${run}`;
+  const day = (n: number) => new Date(Date.parse(`${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date())}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const signIn = async (id: string, n: number) => {
+    const page = await (await browser.newContext({ extraHTTPHeaders: { "x-forwarded-for": `198.18.${20 + n}.${run % 250}` } })).newPage();
+    await page.goto("/en/login");
+    await page.getByLabel("Email address").fill(`${id}@sampark.test`);
+    await page.getByLabel("Password", { exact: true }).fill("Sampark-Demo-2026!");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/dashboard/);
+    return page;
+  };
+  // Waits for the drawer's slide-in (mid-animation colours are blended);
+  // endless animations such as spinners are ignored.
+  const axe = async (page: import("@playwright/test").Page) => {
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
+    expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze()).violations).toEqual([]);
+  };
+  const co = await signIn("co", 1);
+  await co.getByRole("link", { name: "Camps (CATC)" }).click();
+  await co.getByRole("link", { name: "Plan camp" }).click();
+  await co.getByLabel("CATC number").fill(catc);
+  await co.getByLabel("Location").fill("E2E camp ground");
+  await co.getByLabel("Starts").fill(day(20));
+  await co.getByLabel("Ends").fill(day(24));
+  await co.getByLabel("Planned strength").fill("200");
+  await co.getByLabel("Seats, Demo Unit 1", { exact: true }).fill("120");
+  await co.getByLabel("Seats, Demo Unit 1B").fill("60");
+  await expect(co.getByRole("status").filter({ hasText: "180 of 200 seats allocated" })).toBeVisible();
+  await co.getByRole("button", { name: "Save plan" }).click();
+  await expect(co).toHaveURL(/open=/);
+  const link = `/en/dashboard/camps?open=${new URL(co.url()).searchParams.get("open")}`;
+  await expect(co.getByRole("dialog")).toContainText(catc);
+  await expect(co.getByRole("dialog")).toContainText("Upcoming");
+  await axe(co);
+  // Hold the camp in the past (only the service's date rule stops planning one there).
+  const { Client } = await import("pg");
+  await import("dotenv/config");
+  const pg = new Client({ connectionString: process.env.DATABASE_URL });
+  await pg.connect();
+  await pg.query(`update "Camp" set "startDate" = $1, "endDate" = $2 where "catcNo" = $3`, [day(-8), day(-3), catc]);
+  await pg.end();
+  const report = async (page: import("@playwright/test").Page, first: string) => {
+    await page.goto(link);
+    // The file input reacts only once the page is interactive.
+    await page.waitForLoadState("networkidle");
+    await page.getByLabel("Upload report file").setInputFiles({ name: "report.png", mimeType: "image/png", buffer: Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex") });
+    await expect(page.getByRole("dialog").getByText(/Report files \d/).first()).toBeVisible();
+    await page.getByLabel(/^Attended from Demo Unit 1 \(/).fill(first);
+    await page.getByLabel(/^Attended from Demo Unit 1B/).fill("55");
+    await page.getByRole("button", { name: "Submit report" }).click();
+    await expect(page.getByRole("dialog")).toContainText("Report with group");
+  };
+  await report(co, "118");
+  const group = await signIn("group", 2);
+  await group.goto(link);
+  await group.getByLabel("Remarks").fill("Add the attendance sheet.");
+  await group.getByRole("button", { name: "Return report" }).click();
+  await expect(group.getByRole("dialog")).toContainText("Report returned");
+  await co.goto(link);
+  await expect(co.getByRole("dialog")).toContainText("Returned by the group: Add the attendance sheet.");
+  await report(co, "117");
+  await group.goto(link);
+  await group.getByRole("button", { name: "Accept report" }).click();
+  await expect(group.getByRole("dialog")).toContainText("Report accepted");
+  await expect(group.getByRole("dialog")).toContainText("172 of 180");
+  const ddg = await signIn("admin", 3);
+  await ddg.goto("/en/dashboard/camps?view=reports&report=ACCEPTED");
+  await expect(ddg.getByRole("table").getByText(catc)).toBeVisible();
+  await axe(ddg);
+  await ddg.goto(link);
+  await expect(ddg.getByRole("dialog")).toContainText("Report accepted");
+  await expect(ddg.getByRole("button", { name: "Accept report" })).toHaveCount(0);
+  await co.goto("/hi/dashboard/camps");
+  await expect(co.getByRole("heading", { name: "कैंप (CATC)" })).toBeVisible();
   await axe(co);
 });

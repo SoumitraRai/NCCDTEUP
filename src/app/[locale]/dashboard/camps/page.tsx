@@ -155,7 +155,7 @@ function TimelineRow({ c, locale, before }: { c: Camp; locale: string; before: R
   return (
     <>
       {before}
-      <li className={`flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 ${c.state === "CURRENT" ? "bg-primary-soft/50" : ""} ${c.state === "CANCELLED" ? "opacity-60" : ""}`}>
+      <li className={`flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 ${c.state === "CURRENT" ? "bg-primary-soft/50" : ""}`}>
         <div className="w-12 shrink-0 text-center" aria-hidden>
           <p className="text-xl leading-none font-semibold tabular-nums">{date.getUTCDate()}</p>
           <p className="text-xs text-muted uppercase">{date.toLocaleDateString(locale === "hi" ? "hi-IN" : "en-IN", { month: "short", timeZone: "UTC" })}</p>
