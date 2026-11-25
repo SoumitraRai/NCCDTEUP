@@ -3,7 +3,7 @@ import { db } from "../src/server/db";
 import { actorById } from "../src/server/authorization";
 import { istDate } from "../src/modules/platform/training-year";
 import { campOptions, campStrength, cancelCamp, createCamp, decideReport, getCamp, listCamps, submitReport, updateCamp } from "../src/modules/camps/service";
-import { uploadIntent } from "../src/server/storage";
+import { listAttachments, uploadIntent } from "../src/server/storage";
 // Camps in the service layer. Seeded: co, ao (unit-1), co2 (unit-2), group
 // (Gp Cdr, group-1), group2 (group-2), admin (DDG), ano (institution-1 in
 // unit-1), ano2, cadet. A second unit of group-1 and a group staff officer
@@ -136,6 +136,22 @@ describe("camps", () => {
     await decideReport(await as(staff), c.id, { decision: "ACCEPT", version: 4 });
     camp = await getCamp(await as("admin"), c.id);
     expect([camp.report, camp.attended, camp.rounds.map((r) => r.decision)]).toEqual(["ACCEPTED", 328, ["RETURNED", "ACCEPTED"]]);
+    // The directorate (DDG and staff) sees every report, file and remark, but does not review.
+    const dir = `tcd-${run}`;
+    await db.user.create({ data: { id: dir, name: dir, email: `${dir}@example.test` } });
+    await db.roleAssignment.create({ data: { userId: dir, role: "DTE_STAFF", appointmentCode: "AD_ADM", level: "DIRECTORATE", directorateId: "dte-up" } });
+    try {
+      for (const id of ["admin", dir]) {
+        const seen = await getCamp(await as(id), c.id);
+        expect([seen.files.length, seen.rounds.map((r) => r.remarks), seen.canReview, seen.canReport]).toEqual([1, ["Attendance sheet missing", ""], false, false]);
+        expect(await listAttachments(await as(id), "camp", c.id, "")).toHaveLength(1);
+        expect((await listCamps(await as(id), { report: "ACCEPTED" })).camps.map((x) => x.id)).toContain(c.id);
+      }
+      await expect(decideReport(await as(dir), c.id, { decision: "RETURN", remarks: "Looks wrong", version: 5 })).rejects.toMatchObject({ status: 403 });
+    } finally {
+      await db.roleAssignment.deleteMany({ where: { userId: dir } });
+      await db.user.deleteMany({ where: { id: dir } });
+    }
     const own = await make("group", { unitId: sib, seats: [{ unitId: sib, seats: 10 }] });
     await over(own.id);
     await fileFor(own.id, "group");

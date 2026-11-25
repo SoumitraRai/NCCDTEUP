@@ -53,6 +53,12 @@ The DDG or ADG gives or withdraws the `movement` duty for directorate officers o
 - **Who sees it:** the creator, the traveller, and officers whose post covers the traveller's unit, group or directorate. Never public.
 - **Changes:** only the creator cancels (pending or returned) or edits and sends again (returned); every change is versioned, snapshotted per round and audited. An account-holding traveller of a TD someone else created gets an in-app notice on creation, edit, cancellation and the final decision.
 
+## Camps (CATC)
+
+- **Who plans:** the CO or AO for their own unit; the Gp Cdr or group staff for any unit of their group. Seats go only to units of the host's group. Edit and cancel (with a reason) only before the camp starts; versioned and audited.
+- **Who sees:** every directorate post sees every camp, report, report file, attendance figure, remark and history entry, even without a step to act on (user decision, 2026-11-25). Group officers see their group's camps; CO, AO, ANO and CTO see camps their unit hosts or has seats in. Never cadets, never public.
+- **Reports:** after the camp the host unit or its group uploads the report (scanned) and enters attendance for every unit with seats. A Gp Cdr or group staff officer other than the submitter accepts it or returns it with a remark. Each round is an immutable snapshot.
+
 ## DDG and ADG post accounts
 
 These posts are closed to registration. A directorate admin (role `ADMIN`) sets up the account on the Directorate posts page and, when the holder changes, updates name, email and phone. A handover deletes the old password, authenticator and sessions and creates a one-time set-password link (24 hours, hash stored). With email verification on it is emailed to the new address; otherwise (the default) it is shown once to the admin to hand over in person. Nobody sets up or hands over the post they hold. Every set-up and handover is audited with the previous holder's name and email.
