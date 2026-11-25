@@ -38,7 +38,19 @@ async function seedStrength() {
     if (camp) await db.camp.update({ where: { id: camp.id }, data: { briefingDate: new Date(camp.startDate.getTime() - before * 86_400_000) } });
   }
 }
+// Synthetic reference rates for camp budgets (paise per cadet-day, ANO-day,
+// staff-day or litre). Development fixtures, never NCC rates.
+async function seedRates() {
+  const rates = { CADET_MESSING: 15000n, ANO_DA: 50000n, STAFF_DA: 40000n, FUEL_DIESEL: 9000n, FUEL_PETROL: 10000n };
+  for (const [category, ratePaise] of Object.entries(rates))
+    await db.financialRatePolicy.upsert({
+      where: { id: `demo-CAMP-${category}` },
+      create: { id: `demo-CAMP-${category}`, name: "Development fixture — not an NCC rate", version: 1, kind: "CAMP", category, effectiveFrom: new Date("2020-01-01"), effectiveTo: new Date("2030-12-31"), ratePaise, capPaise: 0n, partialMonthRule: "NONE", approved: true, synthetic: true },
+      update: {},
+    });
+}
 export async function seedCamps() {
+  await seedRates();
   await db.unit.upsert({ where: { id: "unit-1b" }, create: { id: "unit-1b", name: "Demo Unit 1B", groupId: "group-1" }, update: {} });
   if (await db.camp.count({ where: { details: marker } })) return seedStrength();
   const as = actorById;

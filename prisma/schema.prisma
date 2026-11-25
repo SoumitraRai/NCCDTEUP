@@ -684,6 +684,7 @@ model Camp {
   createdById String
   allocations CampAllocation[]
   reports CampReportSubmission[]
+  budgets CampBudget[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@unique([groupId,trainingYear,catcNo])
@@ -737,4 +738,48 @@ model CadetStrength {
   updatedById String
   updatedAt DateTime @updatedAt
   @@unique([institutionId,trainingYear])
+}
+// Camp budgets (docs/superpowers/specs/2026-11-25-camp-budgets-design.md):
+// one per camp and stage (INITIAL, REVISED, FINAL). Money is in paise.
+model CampBudget {
+  id String @id @default(cuid())
+  campId String
+  camp Camp @relation(fields:[campId],references:[id])
+  stage String
+  // PENDING, RETURNED, APPROVED, REJECTED or CANCELLED, from the approval request.
+  status String @default("PENDING")
+  cadets Int
+  anos Int
+  staff Int
+  days Int
+  demandedPaise BigInt
+  sanctionedPaise BigInt?
+  createdById String
+  version Int @default(1)
+  lines CampBudgetLine[]
+  submissions CampBudgetSubmission[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([campId,stage])
+  @@index([status])
+}
+model CampBudgetLine {
+  id String @id @default(cuid())
+  budgetId String
+  budget CampBudget @relation(fields:[budgetId],references:[id],onDelete:Cascade)
+  head String
+  // Litres for fuel; otherwise unused.
+  quantity Int?
+  amountPaise BigInt
+  note String @default("")
+  @@unique([budgetId,head])
+}
+model CampBudgetSubmission {
+  id String @id @default(cuid())
+  budgetId String
+  budget CampBudget @relation(fields:[budgetId],references:[id],onDelete:Cascade)
+  cycle Int
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@unique([budgetId,cycle])
 }

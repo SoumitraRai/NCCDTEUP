@@ -46,6 +46,15 @@ export const routes: Record<string, { version: number; stages: Stage[] }> = {
       { code: "ADG", title: "Additional Director General", posts: ["ADG"], scope: "DIRECTORATE", kind: "APPROVE" },
     ],
   },
+  // Camp budgets (spec 2026-11-25, provisional): the Gp Cdr of the camp's
+  // group recommends, the DDG sanctions.
+  CAMP_BUDGET: {
+    version: 1,
+    stages: [
+      { code: "GP_CDR", title: "Group Commander", posts: ["GP_CDR"], scope: "GROUP", kind: "RECOMMEND" },
+      { code: "DDG", title: "Deputy Director General", posts: ["DDG"], scope: "DIRECTORATE", kind: "APPROVE" },
+    ],
+  },
 };
 const key = { UNIT: "unitId", GROUP: "groupId", DIRECTORATE: "directorateId" } as const;
 // The formation key a role-held stage is matched on.
