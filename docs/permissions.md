@@ -61,6 +61,14 @@ The DDG or ADG gives or withdraws the `movement` duty for directorate officers o
 - **Briefing:** an optional briefing date on or before the camp's first day, set by whoever may edit the plan.
 - **Reports:** after the camp the host unit or its group uploads the report (scanned) and enters attendance for every unit with seats. A group officer senior to the submitter (TD seniority) accepts it or returns it with a remark, never the submitter. A report the Gp Cdr submitted goes to the directorate, since nobody in the group is senior (user decision, 2026-11-25). A report is due 15 days after the camp ends (user decision, 2026-11-25). Each round is an immutable snapshot.
 
+## Camp budgets
+
+- **What:** one amount demanded per camp and stage (initial, revised, final) with its basis and a note; heads are an optional breakup that must add up to it (user decision, 2026-11-25).
+- **When:** initial before the camp starts; revised before it ends, after a sanctioned initial or, once the camp has started, without one (not while an initial is in the chain); final after it ends, always. Plan camp can submit the initial demand with the plan.
+- **Who prepares:** the host unit's CO or AO or a group officer of the camp's group. Only the preparer edits (when returned), resubmits or cancels.
+- **Chain (provisional, to be confirmed by the directorate):** the Gp Cdr of the camp's group recommends, the DDG sanctions an amount up to the demand; a Gp Cdr's own budget starts at the DDG. The preparer never decides. Reference figures use synthetic rates.
+- **Who sees:** the camp's viewers; every directorate post sees every budget.
+
 ## DDG and ADG post accounts
 
 These posts are closed to registration. A directorate admin (role `ADMIN`) sets up the account on the Directorate posts page and, when the holder changes, updates name, email and phone. A handover deletes the old password, authenticator and sessions and creates a one-time set-password link (24 hours, hash stored). With email verification on it is emailed to the new address; otherwise (the default) it is shown once to the admin to hand over in person. Nobody sets up or hands over the post they hold. Every set-up and handover is audited with the previous holder's name and email.

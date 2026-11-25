@@ -460,3 +460,84 @@ test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the direct
   await clean.query(`delete from "Camp" where id = $1`, [rows[0].id]);
   await clean.end();
 });
+test("camp budgets: plan with initial demand, Gp Cdr recommends, DDG sanctions less, final after the camp", async ({ browser }) => {
+  test.setTimeout(150_000);
+  const run = Date.now();
+  const catc = `E2EB-${run}`;
+  const day = (n: number) => new Date(Date.parse(`${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date())}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const signIn = async (id: string, n: number) => {
+    const page = await (await browser.newContext({ extraHTTPHeaders: { "x-forwarded-for": `198.18.${40 + n}.${run % 250}` } })).newPage();
+    await page.goto("/en/login");
+    await page.getByLabel("Email address").fill(`${id}@sampark.test`);
+    await page.getByLabel("Password", { exact: true }).fill("Sampark-Demo-2026!");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/dashboard/);
+    return page;
+  };
+  const axe = async (page: import("@playwright/test").Page) => {
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
+    expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze()).violations).toEqual([]);
+  };
+  const co = await signIn("co", 1);
+  await co.goto("/en/dashboard/camps?new=1");
+  await co.getByLabel("CATC number").fill(catc);
+  await co.getByLabel("Location").fill("E2E budget ground");
+  await co.getByLabel("Starts").fill(day(20));
+  await co.getByLabel("Ends").fill(day(24));
+  await co.getByLabel("Planned strength").fill("200");
+  await co.getByLabel("Seats, Demo Unit 1", { exact: true }).fill("150");
+  await co.getByLabel("Request the initial budget now (optional)").check();
+  await co.getByLabel("Amount demanded (₹)").fill("300000");
+  await co.getByLabel("ANOs").fill("5");
+  await axe(co);
+  await co.getByRole("button", { name: "Save plan" }).click();
+  await expect(co).toHaveURL(/open=/);
+  const campId = new URL(co.url()).searchParams.get("open")!;
+  await expect(co.getByRole("dialog")).toContainText("Initial budget");
+  await expect(co.getByRole("dialog")).toContainText("₹3,00,000");
+  const sheet = `/en/dashboard/camps?view=budgets&budget=${campId}`;
+  // Gp Cdr recommends from Pending for me.
+  const group = await signIn("group", 2);
+  await group.goto("/en/dashboard/approvals");
+  await group.getByRole("link", { name: new RegExp(`${catc}.*Initial budget`) }).click();
+  await expect(group.getByRole("dialog")).toContainText(`Budgets, CATC ${catc}`);
+  await group.getByRole("button", { name: "Recommend", exact: true }).click();
+  await expect(group.getByRole("button", { name: "Recommend", exact: true })).toHaveCount(0);
+  // The DDG sanctions less than demanded.
+  const ddg = await signIn("admin", 3);
+  await ddg.goto(sheet);
+  await ddg.getByLabel("Amount to sanction (₹)").fill("280000");
+  await axe(ddg);
+  await ddg.getByRole("button", { name: "Sanction", exact: true }).click();
+  await expect(ddg.getByRole("dialog")).toContainText("Sanctioned");
+  await expect(ddg.getByRole("dialog")).toContainText("₹2,80,000");
+  // After the camp, the CO files the final budget; the breakup must add up.
+  const { Client } = await import("pg");
+  await import("dotenv/config");
+  const pg = new Client({ connectionString: process.env.DATABASE_URL });
+  await pg.connect();
+  await pg.query(`update "Camp" set "briefingDate" = null, "startDate" = $1, "endDate" = $2 where id = $3`, [day(-8), day(-3), campId]);
+  await co.goto("/en/dashboard/camps?view=budgets&bq=due");
+  await co.getByRole("link", { name: catc }).click();
+  await co.getByRole("link", { name: "Prepare final budget" }).click();
+  await co.getByLabel("Amount demanded (₹)").fill("250000");
+  await co.getByLabel("Show breakup by head (optional)").check();
+  await co.getByLabel("₹, Cadets: DA and messing").fill("200000");
+  await expect(co.getByRole("status").filter({ hasText: "Breakup ₹2,00,000 of ₹2,50,000" })).toBeVisible();
+  await co.getByRole("button", { name: "Submit for approval" }).click();
+  await expect(co.getByRole("dialog").getByRole("alert")).toContainText("The breakup adds up to ₹200000, not the ₹250000 demanded.");
+  await co.getByLabel("₹, Bus fare").fill("50000");
+  await axe(co);
+  await co.getByRole("button", { name: "Submit for approval" }).click();
+  await expect(co.getByRole("dialog")).toContainText("Final budget");
+  await expect(co.getByRole("dialog")).toContainText("Breakup by head");
+  await expect(co.getByRole("dialog")).toContainText("₹50,000");
+  // Leave the development database as it was.
+  const { rows } = await pg.query(`select id from "CampBudget" where "campId" = $1`, [campId]);
+  const ids = rows.map((r: { id: string }) => r.id);
+  await pg.query(`delete from "ApprovalRequest" where workflow = 'CAMP_BUDGET' and "resourceId" = any($1)`, [ids]);
+  await pg.query(`delete from "CampBudget" where "campId" = $1`, [campId]);
+  await pg.query(`delete from "AuditEvent" where "resourceId" = any($1)`, [[...ids, campId]]);
+  await pg.query(`delete from "Camp" where id = $1`, [campId]);
+  await pg.end();
+});

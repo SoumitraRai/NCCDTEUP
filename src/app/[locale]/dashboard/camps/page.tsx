@@ -39,7 +39,7 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
   // Budgets: the queue list, the "New budget" picker, and one camp's budgets.
   const bqueue: BudgetQueue = BUDGET_QUEUES.find((q) => q === sp.bq) ?? "pending";
   const [budgets, picks, campBudgets, planRates] = await Promise.all([
-    view === "budgets" ? listBudgets(actor, { year: sp.year, q: sp.q, queue: bqueue }) : null,
+    view === "budgets" ? listBudgets(actor, { year: sp.year, q: sp.q, group: sp.group, queue: bqueue }) : null,
     view === "budgets" || sp.pick ? budgetOptions(actor, sp.year) : null,
     sp.budget ? getCampBudgets(actor, sp.budget).catch(() => null) : null,
     sp.new && options.canPlan ? currentRates() : null,

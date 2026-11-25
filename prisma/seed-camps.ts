@@ -8,6 +8,7 @@ import { actorById } from "../src/server/authorization";
 import { istDate, resolveTrainingYear } from "../src/modules/platform/training-year";
 import { storage, privateBucket } from "../src/server/storage";
 import { cancelCamp, createCamp, decideReport, submitReport } from "../src/modules/camps/service";
+import { createBudget, decideBudget } from "../src/modules/camps/budgets";
 const marker = "Synthetic seed camp, not an NCC record.";
 const inDays = (n: number) => new Date(Date.parse(`${istDate()}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const day = (s: string) => new Date(`${s}T00:00:00Z`);
@@ -49,10 +50,44 @@ async function seedRates() {
       update: {},
     });
 }
+// Synthetic budgets through the real services, one in each state.
+const budgetNote = "Synthetic seed budget, not an NCC figure.";
+async function seedBudgets() {
+  if (await db.campBudget.count({ where: { note: { startsWith: budgetNote } } })) return;
+  const camp = (catcNo: string) => db.camp.findFirst({ where: { catcNo, details: marker } });
+  const version = async (id: string) => (await db.campBudget.findUniqueOrThrow({ where: { id } })).version;
+  const [c201, c202, c203, c207] = await Promise.all(["CATC-201", "CATC-202", "CATC-203", "CATC-207"].map(camp));
+  if (!c201 || !c202 || !c203 || !c207) return;
+  // Initial demand waiting for the Gp Cdr.
+  await createBudget(await actorById("co"), { campId: c201.id, stage: "INITIAL", amount: "520000", cadets: 370, anos: 12, staff: 6, note: budgetNote });
+  // A Gp Cdr's initial demand goes to the DDG, sanctioned for less.
+  const b202 = await createBudget(await actorById("group"), { campId: c202.id, stage: "INITIAL", amount: "410000", cadets: 280, anos: 9, staff: 4, note: `${budgetNote} Breakup to follow.` });
+  await decideBudget(await actorById("admin"), b202.id, { decision: "APPROVE", remarks: "Sanctioned at the reduced strength.", sanctioned: "380000", version: await version(b202.id) });
+  // A running camp that had no initial files a revised budget.
+  await createBudget(await actorById("co2"), { campId: c203.id, stage: "REVISED", amount: "455000", cadets: 330, anos: 10, staff: 5, note: `${budgetNote} No initial was filed before the camp.` });
+  // A completed camp's final budget with a breakup, sanctioned.
+  const b207 = await createBudget(await actorById("ao"), {
+    campId: c207.id,
+    stage: "FINAL",
+    amount: "398000",
+    cadets: 267,
+    anos: 9,
+    staff: 4,
+    note: budgetNote,
+    lines: [
+      { head: "CADET_MESSING", amount: "300000" },
+      { head: "ANO_DA", amount: "45000" },
+      { head: "BUS_FARE", amount: "35000" },
+      { head: "FUEL_DIESEL", quantity: 200, amount: "18000" },
+    ],
+  });
+  await decideBudget(await actorById("group"), b207.id, { decision: "RECOMMEND", remarks: "", version: await version(b207.id) });
+  await decideBudget(await actorById("admin"), b207.id, { decision: "APPROVE", remarks: "", version: await version(b207.id) });
+}
 export async function seedCamps() {
   await seedRates();
   await db.unit.upsert({ where: { id: "unit-1b" }, create: { id: "unit-1b", name: "Demo Unit 1B", groupId: "group-1" }, update: {} });
-  if (await db.camp.count({ where: { details: marker } })) return seedStrength();
+  if (await db.camp.count({ where: { details: marker } })) return seedStrength().then(seedBudgets);
   const as = actorById;
   // [by, host, catc, location, start, end (days from today, as finally held), planned, seats]
   const camps = [
@@ -94,4 +129,5 @@ export async function seedCamps() {
   await decideReport(await as("group"), ids["207"], { decision: "ACCEPT", remarks: "", version: await version(ids["207"]) });
   await cancelCamp(await as("co"), ids["208"], { reason: "Venue not available on these dates.", version: await version(ids["208"]) });
   await seedStrength();
+  await seedBudgets();
 }

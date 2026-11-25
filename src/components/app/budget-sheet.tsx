@@ -38,7 +38,7 @@ export function BudgetSheet({ data, locale }: { data: Data; locale: string }) {
                 <h3 id={`stage-${stage}`} className="font-semibold">{t.stageBudget(label)}</h3>
                 {b ? <BudgetStatus status={b.status} locale={locale} /> : <span className="text-[13px] text-muted">{canPrepare ? "" : closed ?? t.notStarted}</span>}
               </div>
-              <div className="space-y-4 px-4 py-3">
+              {(b || canPrepare) && <div className="space-y-4 px-4 py-3">
                 {b ? (
                   <>
                     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
@@ -68,7 +68,7 @@ export function BudgetSheet({ data, locale }: { data: Data; locale: string }) {
                     <ButtonLink query={{ prepare: stage, editBudget: null }} variant="primary">{t.prepare(label)}</ButtonLink>
                   </div>
                 )}
-              </div>
+              </div>}
             </section>
           );
         })}

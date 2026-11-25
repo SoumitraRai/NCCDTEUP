@@ -210,10 +210,11 @@ export const BUDGET_QUEUES = ["pending", "process", "disposed", "due"] as const;
 export type BudgetQueue = (typeof BUDGET_QUEUES)[number];
 // Budgets of the year's camps in scope, by queue, with counts and the
 // completed camps still owing a sanctioned final budget ("due").
-export async function listBudgets(actor: Actor, f: { year?: string; q?: string; queue: BudgetQueue }) {
+export async function listBudgets(actor: Actor, f: { year?: string; q?: string; group?: string; queue: BudgetQueue }) {
   const { year } = await resolveTrainingYear(f.year);
   const search = terms(f.q ?? "").map((t) => ({ camp: { OR: [{ catcNo: { contains: t, mode: "insensitive" as const } }, { location: { contains: t, mode: "insensitive" as const } }, { unit: { name: { contains: t, mode: "insensitive" as const } } }] } }));
-  const base: Prisma.CampBudgetWhereInput[] = [{ camp: { AND: [campScope(actor), { trainingYear: year.label }] } }, ...search];
+  const inGroup = f.group ? [{ groupId: f.group }] : [];
+  const base: Prisma.CampBudgetWhereInput[] = [{ camp: { AND: [campScope(actor), { trainingYear: year.label }, ...inGroup] } }, ...search];
   const mine = await awaitingMe(actor);
   const queues: Record<Exclude<BudgetQueue, "due">, Prisma.CampBudgetWhereInput> = {
     pending: { id: { in: mine } },
@@ -222,7 +223,7 @@ export async function listBudgets(actor: Actor, f: { year?: string; q?: string; 
   };
   const today = istDate();
   const completed = await db.camp.findMany({
-    where: { AND: [campScope(actor), { trainingYear: year.label, status: "PLANNED", endDate: { lt: new Date(`${today}T00:00:00Z`) } }] },
+    where: { AND: [campScope(actor), { trainingYear: year.label, status: "PLANNED", endDate: { lt: new Date(`${today}T00:00:00Z`) } }, ...inGroup] },
     include: { unit: { select: { name: true } }, group: { select: { name: true } }, budgets: { where: { status: { in: OPEN } }, select: { stage: true, status: true } } },
     orderBy: { endDate: "asc" },
   });
