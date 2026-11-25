@@ -137,7 +137,8 @@ export function Drawer({ title, closeKeys, children, footer }: { title: string; 
             <X size={18} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        {/* Focusable so keyboard users can scroll a long sheet with no controls in it. */}
+        <div tabIndex={0} className="flex-1 overflow-y-auto px-6 py-5 outline-none focus-visible:ring-2 focus-visible:ring-primary/40">{children}</div>
         {footer && <div className="border-t bg-surface-2/60 px-6 py-4">{footer}</div>}
       </div>
     </div>

@@ -175,6 +175,25 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
             const next = camps.camps.find((c) => c.state === "UPCOMING");
             return <p className="mt-3 text-[13.5px] text-muted">{next ? t.nextCamp(T.camps.catc(next.catcNo), `${next.location} (${next.unit.name})`, day(next.start, locale)) : t.noNextCamp}</p>;
           })()}
+          {(() => {
+            // Briefings from today up to 7 days ahead, soonest first.
+            const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+            const until = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+            const soon = camps.camps.filter((c) => c.state === "UPCOMING" && c.briefing && c.briefing >= today && c.briefing <= until).sort((a, b) => a.briefing!.localeCompare(b.briefing!));
+            return soon.length > 0 && (
+              <div className="mt-4">
+                <h3 className="mb-2 text-[13px] font-medium text-muted">{t.briefingsSoon}</h3>
+                <ul className="divide-y rounded-xl border bg-surface">
+                  {soon.map((c) => (
+                    <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13.5px]">
+                      <Link href={`${base}/camps?open=${c.id}`} className="font-medium hover:text-primary">{T.camps.catc(c.catcNo)} · {c.location}</Link>
+                      <span className="font-medium text-primary">{T.camps.briefingOn(day(c.briefing!, locale))}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
         </section>
       )}
 

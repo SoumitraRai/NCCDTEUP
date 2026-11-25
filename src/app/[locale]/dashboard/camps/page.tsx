@@ -10,6 +10,8 @@ import { day } from "@/components/app/format";
 import { ButtonLink, ListControls, OpenLink, OpenRow } from "@/components/app/ui";
 import { CampForm } from "@/components/app/camp-form";
 import { CampDetail, campDates } from "@/components/app/camp-detail";
+import { StrengthForm } from "@/components/app/strength-form";
+import { unitStrength } from "@/modules/camps/enrolment";
 const VIEWS = ["timeline", "strength", "reports"] as const;
 const QUEUES = ["OVERDUE", "DUE", "SUBMITTED", "RETURNED", "ACCEPTED"] as const;
 const STATES = ["UPCOMING", "CURRENT", "COMPLETED", "CANCELLED"] as const;
@@ -31,6 +33,7 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
   const [list, strength, options] = await Promise.all([listCamps(actor, filter), campStrength(actor, { year: sp.year, group: sp.group }), campOptions(actor)]);
   const queue = QUEUES.find((q) => q === sp.report) ?? QUEUES.find((q) => list.reports[q] > 0) ?? "OVERDUE";
   const open = sp.open ? await getCamp(actor, sp.open).catch(() => null) : null;
+  const unitOpen = sp.strength ? await unitStrength(actor, sp.strength, sp.year).catch(() => null) : null;
   const href = (updates: Record<string, string | null>) => {
     const next = new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => !!e[1]));
     for (const [k, v] of Object.entries(updates)) if (v) next.set(k, v); else next.delete(k);
@@ -100,9 +103,10 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
           <Reports camps={list.camps.filter((c) => c.report === queue)} today={list.today} locale={locale} />
         </>
       )}
+      {unitOpen && <StrengthForm key={unitOpen.unit.id} data={unitOpen} />}
       {sp.new && options.canPlan && <CampForm options={options} />}
       {open && sp.edit && open.canEdit ? (
-        <CampForm key={open.id} options={options} edit={{ id: open.id, version: open.version, unitId: open.unit.id, catcNo: open.catcNo, location: open.location, start: open.start, end: open.end, plannedStrength: open.plannedStrength, details: open.details, seats: open.seats }} />
+        <CampForm key={open.id} options={options} edit={{ id: open.id, version: open.version, unitId: open.unit.id, catcNo: open.catcNo, location: open.location, start: open.start, end: open.end, plannedStrength: open.plannedStrength, briefing: open.briefing ?? "", details: open.details, seats: open.seats }} />
       ) : (
         open && <CampDetail camp={open} locale={locale} />
       )}
@@ -166,6 +170,7 @@ function TimelineRow({ c, locale, before }: { c: Camp; locale: string; before: R
         <div className="min-w-[220px] flex-1">
           <OpenLink id={c.id}>{t.catc(c.catcNo)} · {c.location}</OpenLink>
           <p className="text-[13px] text-muted">{c.unit.name}, {c.group.name} · {campDates(c, locale)} ({t.days(c.days)})</p>
+          {c.briefing && c.state === "UPCOMING" && <p className="text-[13px] font-medium text-primary">{t.briefingOn(day(c.briefing, locale))}</p>}
         </div>
         <div className="w-40 shrink-0 space-y-1">
           <p className="text-[13px] tabular-nums">{t.seatsOf(c.allocated, c.plannedStrength)}</p>
@@ -181,20 +186,22 @@ function TimelineRow({ c, locale, before }: { c: Camp; locale: string; before: R
 }
 function Strength({ data, locale }: { data: Awaited<ReturnType<typeof campStrength>>; locale: string }) {
   const t = dict(locale).camps;
-  const facts: [string, number, boolean][] = [
-    [t.units, data.totals.units, false],
-    [t.seats, data.totals.seats, false],
-    [t.attended, data.totals.attended, false],
-    [t.without, data.totals.without, data.totals.without > 0],
+  const facts: [string, number, string, boolean][] = [
+    [t.enrolled, data.totals.enrolled, t.authorised + ": " + data.totals.authorised, false],
+    [t.seats, data.totals.seats, `${t.attended}: ${data.totals.attended}`, false],
+    [t.short, data.totals.short, t.shortHint, data.totals.short > 0],
+    [t.without, data.totals.without, "", data.totals.without > 0],
   ];
+  const num = "px-4 py-2.5 text-right tabular-nums";
   return (
     <div className="space-y-6">
       <p className="text-[13.5px] text-muted">{t.strengthIntro}</p>
       <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {facts.map(([k, v, warn]) => (
+        {facts.map(([k, v, hint, warn]) => (
           <div key={k} className="rounded-xl border bg-surface px-4 py-3">
             <dt className="text-[13px] text-muted">{k}</dt>
             <dd className={`mt-1 text-2xl font-semibold tabular-nums ${warn ? "text-warning" : ""}`}>{v}</dd>
+            {hint && <dd className="mt-0.5 text-xs text-muted">{hint}</dd>}
           </div>
         ))}
       </dl>
@@ -202,14 +209,17 @@ function Strength({ data, locale }: { data: Awaited<ReturnType<typeof campStreng
         <section key={g.id} aria-labelledby={`g-${g.id}`} className="overflow-hidden rounded-xl border bg-surface">
           <h2 id={`g-${g.id}`} className="border-b bg-surface-2 px-5 py-2.5 font-semibold">{g.name}</h2>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] table-fixed text-left">
+            <table className="w-full min-w-[920px] table-fixed text-left">
               <thead className="text-[13px] text-muted">
                 <tr>
-                  <th className="w-[36%] px-5 py-2 font-medium">{t.unit}</th>
-                  <th className="px-5 py-2 text-right font-medium">{t.hosted}</th>
-                  <th className="px-5 py-2 text-right font-medium">{t.campsWithSeats}</th>
-                  <th className="px-5 py-2 text-right font-medium">{t.seats}</th>
-                  <th className="px-5 py-2 text-right font-medium">{t.attended}</th>
+                  <th className="w-[24%] px-5 py-2 font-medium">{t.unit}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t.authorised}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t.enrolled}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t.hosted}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t.seats}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t.attended}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t.short}</th>
+                  <th className="w-[15%] px-5 py-2"><span className="sr-only">{t.byCollege}</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -219,18 +229,26 @@ function Strength({ data, locale }: { data: Awaited<ReturnType<typeof campStreng
                       {u.name}
                       {u.camps === 0 && <span className="ml-2 rounded-full bg-warning/12 px-2 py-0.5 text-xs font-medium text-warning">{t.noSeats}</span>}
                     </td>
-                    <td className="px-5 py-2.5 text-right tabular-nums">{u.hosted}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums">{u.camps}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums">{u.seats}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums">{u.attended}</td>
+                    <td className={num}>{u.authorised}</td>
+                    <td className={num}>{u.enrolled}</td>
+                    <td className={num}>{u.hosted}</td>
+                    <td className={num}>{u.seats}</td>
+                    <td className={num}>{u.attended}</td>
+                    <td className={`${num} ${u.enrolled > u.seats ? "font-medium text-warning" : ""}`}>{Math.max(0, u.enrolled - u.seats)}</td>
+                    <td className="px-5 py-2.5 text-right">
+                      <ButtonLink query={{ strength: u.id, open: null }} variant={u.canEnter ? "primary" : "ghost"}>{u.canEnter ? t.enterStrength : t.byCollege}</ButtonLink>
+                    </td>
                   </tr>
                 ))}
                 <tr className="border-t bg-surface-2/60 font-medium">
                   <td className="px-5 py-2.5">{t.total}</td>
-                  <td className="px-5 py-2.5 text-right tabular-nums">{g.totals.hosted}</td>
-                  <td className="px-5 py-2.5 text-right" />
-                  <td className="px-5 py-2.5 text-right tabular-nums">{g.totals.seats}</td>
-                  <td className="px-5 py-2.5 text-right tabular-nums">{g.totals.attended}</td>
+                  <td className={num}>{g.totals.authorised}</td>
+                  <td className={num}>{g.totals.enrolled}</td>
+                  <td className={num}>{g.totals.hosted}</td>
+                  <td className={num}>{g.totals.seats}</td>
+                  <td className={num}>{g.totals.attended}</td>
+                  <td className={num}>{g.totals.short}</td>
+                  <td />
                 </tr>
               </tbody>
             </table>

@@ -5,7 +5,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import sharp from "sharp";
 import { db } from "../src/server/db";
 import { actorById } from "../src/server/authorization";
-import { istDate } from "../src/modules/platform/training-year";
+import { istDate, resolveTrainingYear } from "../src/modules/platform/training-year";
 import { storage, privateBucket } from "../src/server/storage";
 import { cancelCamp, createCamp, decideReport, submitReport } from "../src/modules/camps/service";
 const marker = "Synthetic seed camp, not an NCC record.";
@@ -20,9 +20,27 @@ async function reportFile(campId: string, ownerId: string) {
   await storage.send(new PutObjectCommand({ Bucket: privateBucket, Key: objectKey, Body: body, ContentType: "image/png" }));
   await db.attachment.create({ data: { ownerId, institutionId: "", resourceType: "camp", resourceId: campId, objectKey, declaredType: "image/png", size: body.length, status: "CLEAN", purpose: "REPORT", scannedAt: new Date() } });
 }
+// Synthetic authorised and enrolled cadets for every seeded institution
+// (current training year), and briefing dates for the upcoming camps.
+async function seedStrength() {
+  const { year } = await resolveTrainingYear();
+  const institutions = await db.institution.findMany({ where: { active: true, id: { startsWith: "institution-" } }, orderBy: { id: "asc" } });
+  for (const [k, i] of institutions.entries()) {
+    const a = 40 + 10 * (k % 4);
+    await db.cadetStrength.upsert({
+      where: { institutionId_trainingYear: { institutionId: i.id, trainingYear: year.label } },
+      create: { institutionId: i.id, trainingYear: year.label, updatedById: "co", authJD: a, authJW: a - 10, authSD: a + 20, authSW: a, enrJD: a - 4, enrJW: a - 13, enrSD: a + 15, enrSW: a - 6 },
+      update: {},
+    });
+  }
+  for (const [catc, before] of [["CATC-201", 5], ["CATC-202", 7]] as const) {
+    const camp = await db.camp.findFirst({ where: { catcNo: catc, details: marker, briefingDate: null } });
+    if (camp) await db.camp.update({ where: { id: camp.id }, data: { briefingDate: new Date(camp.startDate.getTime() - before * 86_400_000) } });
+  }
+}
 export async function seedCamps() {
   await db.unit.upsert({ where: { id: "unit-1b" }, create: { id: "unit-1b", name: "Demo Unit 1B", groupId: "group-1" }, update: {} });
-  if (await db.camp.count({ where: { details: marker } })) return;
+  if (await db.camp.count({ where: { details: marker } })) return seedStrength();
   const as = actorById;
   // [by, host, catc, location, start, end (days from today, as finally held), planned, seats]
   const camps = [
@@ -63,4 +81,5 @@ export async function seedCamps() {
   await submitReport(await as("ao"), ids["207"], { attendance: await attendance(ids["207"], 3), version: await version(ids["207"]) });
   await decideReport(await as("group"), ids["207"], { decision: "ACCEPT", remarks: "", version: await version(ids["207"]) });
   await cancelCamp(await as("co"), ids["208"], { reason: "Venue not available on these dates.", version: await version(ids["208"]) });
+  await seedStrength();
 }

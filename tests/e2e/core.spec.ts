@@ -355,6 +355,7 @@ test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the direct
   await co.getByLabel("Starts").fill(day(20));
   await co.getByLabel("Ends").fill(day(24));
   await co.getByLabel("Planned strength").fill("200");
+  await co.getByLabel("Briefing date (optional)").fill(day(17));
   await co.getByLabel("Seats, Demo Unit 1", { exact: true }).fill("120");
   await co.getByLabel("Seats, Demo Unit 1B").fill("60");
   await expect(co.getByRole("status").filter({ hasText: "180 of 200 seats allocated" })).toBeVisible();
@@ -363,13 +364,14 @@ test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the direct
   const link = `/en/dashboard/camps?open=${new URL(co.url()).searchParams.get("open")}`;
   await expect(co.getByRole("dialog")).toContainText(catc);
   await expect(co.getByRole("dialog")).toContainText("Upcoming");
+  await expect(co.getByRole("dialog")).toContainText("Briefing");
   await axe(co);
   // Hold the camp in the past (only the service's date rule stops planning one there).
   const { Client } = await import("pg");
   await import("dotenv/config");
   const pg = new Client({ connectionString: process.env.DATABASE_URL });
   await pg.connect();
-  await pg.query(`update "Camp" set "startDate" = $1, "endDate" = $2 where "catcNo" = $3`, [day(-8), day(-3), catc]);
+  await pg.query(`update "Camp" set "briefingDate" = $1, "startDate" = $2, "endDate" = $3 where "catcNo" = $4`, [day(-11), day(-8), day(-3), catc]);
   await pg.end();
   const report = async (page: import("@playwright/test").Page, first: string) => {
     await page.goto(link);
@@ -412,4 +414,29 @@ test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the direct
   await axe(ddg);
   await ddg.getByRole("link", { name: "English" }).click();
   await expect(ddg).toHaveURL(/\/en\/dashboard\/camps\?state=UPCOMING$/);
+  // Cadet strength: the CO enters it per college; the DDG only reads it.
+  await co.goto("/en/dashboard/camps?view=strength");
+  await co.getByRole("link", { name: "Enter strength" }).first().click();
+  const cell = co.getByLabel("Enrolled JD, Demo Central College");
+  const was = await cell.inputValue();
+  await cell.fill(String(Number(was) + 7));
+  await co.getByRole("button", { name: "Save strength" }).click();
+  await expect(co.getByRole("dialog")).toHaveCount(0);
+  await co.getByRole("link", { name: "Enter strength" }).first().click();
+  await expect(co.getByLabel("Enrolled JD, Demo Central College")).toHaveValue(String(Number(was) + 7));
+  await axe(co);
+  await co.getByLabel("Enrolled JD, Demo Central College").fill(was);
+  await co.getByRole("button", { name: "Save strength" }).click();
+  await expect(co.getByRole("dialog")).toHaveCount(0);
+  await ddg.goto("/en/dashboard/camps?view=strength&strength=unit-1");
+  await expect(ddg.getByRole("dialog")).toContainText("Entered by the unit's CO or AO.");
+  await expect(ddg.getByRole("button", { name: "Save strength" })).toHaveCount(0);
+  // Leave the development database as it was.
+  const clean = new Client({ connectionString: process.env.DATABASE_URL });
+  await clean.connect();
+  const { rows } = await clean.query(`select id from "Camp" where "catcNo" = $1`, [catc]);
+  await clean.query(`delete from "Attachment" where "resourceType" = 'camp' and "resourceId" = $1`, [rows[0].id]);
+  await clean.query(`delete from "AuditEvent" where "resourceId" = $1`, [rows[0].id]);
+  await clean.query(`delete from "Camp" where id = $1`, [rows[0].id]);
+  await clean.end();
 });

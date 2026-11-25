@@ -33,6 +33,7 @@ export function CampDetail({ camp, locale }: { camp: Camp; locale: string }) {
             [t.group, camp.group.name],
             [t.location, camp.location],
             [t.dates, `${campDates(camp, locale)} (${t.days(camp.days)})`],
+            ...(camp.briefing ? [[t.briefing, day(camp.briefing, locale)]] : []),
             [t.planned, String(camp.plannedStrength)],
             [t.allocated, `${camp.allocated}, ${t.unallocated(camp.plannedStrength - camp.allocated)}`],
             ...(camp.attended !== null ? [[t.attendedTotal, t.attendedOf(camp.attended, camp.allocated)]] : []),
