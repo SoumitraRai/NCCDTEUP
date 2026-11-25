@@ -1,16 +1,17 @@
 // Hindi for messages the server sends back to the dashboard. Keys are the
 // exact English text; anything not listed is returned in English.
 const exact: Record<string, string> = {
+  "The initial budget is prepared before the camp starts.": "प्रारंभिक बजट कैंप शुरू होने से पहले बनाया जाता है।",
+  "A revised budget is prepared before the camp ends.": "संशोधित बजट कैंप समाप्त होने से पहले बनाया जाता है।",
+  "Enter the amount demanded.": "माँगी गई राशि लिखें।",
+  "Keep the note under 1000 characters.": "टिप्पणी 1000 अक्षरों से कम रखें।",
   "This camp is cancelled.": "यह कैंप रद्द है।",
-  "The initial budget is prepared before the camp ends.": "प्रारंभिक बजट कैंप समाप्त होने से पहले बनाया जाता है।",
   "The initial budget must be sanctioned first.": "पहले प्रारंभिक बजट स्वीकृत होना चाहिए।",
-  "A revised budget is prepared while the camp is running.": "संशोधित बजट कैंप चलने के दौरान बनाया जाता है।",
   "The final budget is prepared after the camp ends.": "अंतिम बजट कैंप समाप्त होने के बाद बनाया जाता है।",
   "Enter an amount in rupees, e.g. 1500": "राशि रुपये में लिखें, जैसे 1500",
   "Numbers cannot be negative.": "संख्याएँ ऋणात्मक नहीं हो सकतीं।",
   "Numbers must be at most 10000.": "संख्याएँ अधिकतम 10000 हो सकती हैं।",
   "List each head once.": "हर मद एक ही बार लिखें।",
-  "Enter at least one amount.": "कम से कम एक राशि लिखें।",
   "Only the host unit or its group can prepare this camp's budget.": "इस कैंप का बजट केवल आयोजक यूनिट या उसका ग्रुप बना सकता है।",
   "This stage already has a budget.": "इस चरण का बजट पहले से है।",
   "Budget not found.": "बजट नहीं मिला।",
@@ -201,6 +202,7 @@ const stages: Record<string, string> = {
 const stage = (title: string) => stages[title] ?? title;
 const decision: Record<string, string> = { review: "अनुशंसा", "not recommend": "अनुशंसा से इनकार", approve: "स्वीकृति", return: "वापसी", reject: "अस्वीकृति" };
 const patterns: [RegExp, (...m: string[]) => string][] = [
+  [/^The breakup adds up to (₹[\d.]+), not the (₹[\d.]+) demanded\.$/, (a, b) => `मदों का योग ${a} है, माँगी गई ${b} नहीं।`],
   [/^Seats allocated \((\d+)\) are more than the planned strength \((\d+)\)\.$/, (a, p) => `आवंटित सीटें (${a}) नियोजित संख्या (${p}) से अधिक हैं।`],
   [/^Enter the (latitude|longitude) as a number\.$/, (w) => `${what[w]} संख्या में लिखें।`],
   [/^The (latitude|longitude) must be between ([\d.]+) and ([\d.]+)\.$/, (w, a, b) => `${what[w]} ${a} और ${b} के बीच होना चाहिए।`],

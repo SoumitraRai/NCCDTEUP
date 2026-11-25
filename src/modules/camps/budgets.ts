@@ -8,7 +8,7 @@ import { terms } from "@/modules/platform/query";
 import { istDate, resolveTrainingYear } from "@/modules/platform/training-year";
 import { campDays, campState } from "./rules";
 import { HEAD_NAMES, HEADS, STAGES, reference, rupees, stageClosed, type Head, type Stage } from "./budget-rules";
-import { campScope, handles } from "./service";
+import { campScope, handles } from "./access";
 // Camp budgets (docs/superpowers/specs/2026-11-25-camp-budgets-design.md).
 type Tx = Prisma.TransactionClient;
 const WORKFLOW = "CAMP_BUDGET";
@@ -28,19 +28,33 @@ async function rates(on: Date) {
 }
 const count = z.coerce.number({ error: "Enter a number." }).int("Enter a whole number.").min(0, "Numbers cannot be negative.").max(10000, "Numbers must be at most 10000.");
 const line = z.object({ head: z.enum(HEAD_NAMES as [Head, ...Head[]]), quantity: count.nullable().default(null), amount: rupees, note: z.string().trim().max(300, "Keep the note under 300 characters.").default("") }).strict();
-const basis = { cadets: count, anos: count, staff: count, lines: z.array(line).min(1).max(HEADS.length) };
+// One amount demanded; the lines (heads) are an optional breakup that must
+// add up to it when given (user, 2026-11-25).
+export const budgetFields = {
+  amount: rupees.refine((p) => p > 0n, "Enter the amount demanded."),
+  cadets: count,
+  anos: count,
+  staff: count,
+  note: z.string().trim().max(1000, "Keep the note under 1000 characters.").default(""),
+  lines: z.array(line).max(HEADS.length).default([]),
+};
+const basis = budgetFields;
 const createInput = z.object({ campId: z.string().min(1).max(40), stage: z.enum(STAGES), ...basis }).strict();
 const resubmitInput = z.object({ ...basis, version: z.number().int().positive() }).strict();
 const versionInput = z.object({ version: z.number().int().positive() }).strict();
 const decideInput = z
   .object({ decision: z.enum(["RECOMMEND", "NOT_RECOMMEND", "APPROVE", "RETURN", "REJECT"]), remarks: z.string().trim().max(1000).default(""), sanctioned: rupees.optional(), version: z.number().int().positive() })
   .strict();
-const checkLines = (lines: z.infer<typeof line>[]) => {
-  if (new Set(lines.map((l) => l.head)).size !== lines.length) throw new AppError(400, "List each head once.");
-  const total = lines.reduce((n, l) => n + l.amount, 0n);
-  if (total <= 0n) throw new AppError(400, "Enter at least one amount.");
-  return total;
+// Keeps the heads that carry an amount; when any do, they must add up to
+// the amount demanded.
+const breakup = (amount: bigint, all: z.infer<typeof line>[]) => {
+  if (new Set(all.map((l) => l.head)).size !== all.length) throw new AppError(400, "List each head once.");
+  const lines = all.filter((l) => l.amount > 0n);
+  const sum = lines.reduce((n, l) => n + l.amount, 0n);
+  if (lines.length && sum !== amount) throw new AppError(400, `The breakup adds up to ${rupeesText(sum)}, not the ${rupeesText(amount)} demanded.`);
+  return lines;
 };
+const rupeesText = (p: bigint) => `₹${p / 100n}${p % 100n ? `.${(p % 100n).toString().padStart(2, "0")}` : ""}`;
 async function visibleCamp(actor: Actor, campId: string, tx: Tx | typeof db = db) {
   const camp = await tx.camp.findFirst({ where: { AND: [{ id: campId }, campScope(actor)] } });
   if (!camp) throw new AppError(404, "Camp not found.");
@@ -49,8 +63,9 @@ async function visibleCamp(actor: Actor, campId: string, tx: Tx | typeof db = db
 const stateOf = (c: { status: string; startDate: Date; endDate: Date }) => campState({ status: c.status, start: ymd(c.startDate), end: ymd(c.endDate) }, istDate());
 const sanctionedStages = async (tx: Tx | typeof db, campId: string) =>
   Object.fromEntries((await tx.campBudget.findMany({ where: { campId, status: "APPROVED" }, select: { stage: true } })).map((b) => [b.stage, true])) as Partial<Record<Stage, boolean>>;
-const snapshot = (b: { stage: string; cadets: number; anos: number; staff: number; days: number; demandedPaise: bigint }, lines: z.infer<typeof line>[]) => ({
+const snapshot = (b: { stage: string; cadets: number; anos: number; staff: number; days: number; demandedPaise: bigint; note: string }, lines: z.infer<typeof line>[]) => ({
   stage: b.stage,
+  note: b.note,
   cadets: b.cadets,
   anos: b.anos,
   staff: b.staff,
@@ -62,34 +77,38 @@ const chainOf = (camp: { unitId: string; groupId: string; directorateId: string 
 // A Gp Cdr's own budget starts at the DDG: nobody junior decides on it.
 const startIndex = (actor: Actor, camp: { groupId: string }) =>
   actor.assignments.some((a) => a.appointmentCode === "GP_CDR" && a.level === "GROUP" && a.anchor.groupId === camp.groupId) ? 1 : 0;
+export type BudgetInput = { stage: Stage; amount: bigint; cadets: number; anos: number; staff: number; note: string; lines: z.infer<typeof line>[] };
+// Prepares and submits a budget for a camp inside the caller's transaction
+// (also used when a camp is planned with its initial demand).
+export async function prepareBudget(tx: Tx, actor: Actor, camp: { id: string; status: string; startDate: Date; endDate: Date; unitId: string; groupId: string; directorateId: string }, input: BudgetInput) {
+  const lines = breakup(input.amount, input.lines);
+  if (!handles(actor, camp)) throw new AppError(403, "Only the host unit or its group can prepare this camp's budget.");
+  const closed = stageClosed(input.stage, stateOf(camp), await sanctionedStages(tx, camp.id));
+  if (closed) throw new AppError(409, closed);
+  if (await tx.campBudget.findFirst({ where: { campId: camp.id, stage: input.stage, status: { in: OPEN } } })) throw new AppError(409, "This stage already has a budget.");
+  let budget = await tx.campBudget.create({
+    data: {
+      campId: camp.id,
+      stage: input.stage,
+      cadets: input.cadets,
+      anos: input.anos,
+      staff: input.staff,
+      days: campDays(ymd(camp.startDate), ymd(camp.endDate)),
+      demandedPaise: input.amount,
+      note: input.note,
+      createdById: actor.id,
+      lines: { create: lines.map((l) => ({ head: l.head, quantity: l.quantity, amountPaise: l.amount, note: l.note })) },
+    },
+  });
+  await tx.campBudgetSubmission.create({ data: { budgetId: budget.id, cycle: 1, snapshot: snapshot(budget, lines) } });
+  const req = await openRequest(tx, { workflow: WORKFLOW, resourceId: budget.id, requesterId: actor.id, chain: chainOf(camp), startIndex: startIndex(actor, camp) });
+  if (req.status !== budget.status) budget = await tx.campBudget.update({ where: { id: budget.id }, data: { status: req.status } });
+  await audit(tx, actor.id, "camp.budget.submitted", budget.id, { campId: camp.id, stage: budget.stage, demandedPaise: input.amount.toString() });
+  return { id: budget.id, status: budget.status };
+}
 export async function createBudget(actor: Actor, raw: unknown) {
-  const input = createInput.parse(raw);
-  const total = checkLines(input.lines);
-  return db.$transaction(async (tx) => {
-    const camp = await visibleCamp(actor, input.campId, tx);
-    if (!handles(actor, camp)) throw new AppError(403, "Only the host unit or its group can prepare this camp's budget.");
-    const closed = stageClosed(input.stage, stateOf(camp), await sanctionedStages(tx, camp.id));
-    if (closed) throw new AppError(409, closed);
-    if (await tx.campBudget.findFirst({ where: { campId: camp.id, stage: input.stage, status: { in: OPEN } } })) throw new AppError(409, "This stage already has a budget.");
-    let budget = await tx.campBudget.create({
-      data: {
-        campId: camp.id,
-        stage: input.stage,
-        cadets: input.cadets,
-        anos: input.anos,
-        staff: input.staff,
-        days: campDays(ymd(camp.startDate), ymd(camp.endDate)),
-        demandedPaise: total,
-        createdById: actor.id,
-        lines: { create: input.lines.map((l) => ({ head: l.head, quantity: l.quantity, amountPaise: l.amount, note: l.note })) },
-      },
-    });
-    await tx.campBudgetSubmission.create({ data: { budgetId: budget.id, cycle: 1, snapshot: snapshot(budget, input.lines) } });
-    const req = await openRequest(tx, { workflow: WORKFLOW, resourceId: budget.id, requesterId: actor.id, chain: chainOf(camp), startIndex: startIndex(actor, camp) });
-    if (req.status !== budget.status) budget = await tx.campBudget.update({ where: { id: budget.id }, data: { status: req.status } });
-    await audit(tx, actor.id, "camp.budget.submitted", budget.id, { campId: camp.id, stage: budget.stage, demandedPaise: total.toString() });
-    return { id: budget.id, status: budget.status };
-  }, serializable);
+  const { campId, ...input } = createInput.parse(raw);
+  return db.$transaction(async (tx) => prepareBudget(tx, actor, await visibleCamp(actor, campId, tx), input), serializable);
 }
 // Loads a budget for a change by its preparer at the version they saw.
 async function forPreparer(tx: Tx, actor: Actor, id: string, version: number) {
@@ -105,16 +124,17 @@ const bump = async (tx: Tx, b: { id: string; version: number }, data: Prisma.Cam
 };
 export async function resubmitBudget(actor: Actor, id: string, raw: unknown) {
   const input = resubmitInput.parse(raw);
-  const total = checkLines(input.lines);
+  const lines = breakup(input.amount, input.lines);
+  const total = input.amount;
   return db.$transaction(async (tx) => {
     const b = await forPreparer(tx, actor, id, input.version);
     if (b.status !== "RETURNED") throw new AppError(409, "Only a returned budget can be edited.");
-    await bump(tx, b, { cadets: input.cadets, anos: input.anos, staff: input.staff, demandedPaise: total });
+    await bump(tx, b, { cadets: input.cadets, anos: input.anos, staff: input.staff, demandedPaise: total, note: input.note });
     await tx.campBudgetLine.deleteMany({ where: { budgetId: id } });
-    await tx.campBudgetLine.createMany({ data: input.lines.map((l) => ({ budgetId: id, head: l.head, quantity: l.quantity, amountPaise: l.amount, note: l.note })) });
+    await tx.campBudgetLine.createMany({ data: lines.map((l) => ({ budgetId: id, head: l.head, quantity: l.quantity, amountPaise: l.amount, note: l.note })) });
     const req = await openRequest(tx, { workflow: WORKFLOW, resourceId: id, requesterId: actor.id, chain: chainOf(b.camp) });
     await tx.campBudget.update({ where: { id }, data: { status: req.status } });
-    await tx.campBudgetSubmission.create({ data: { budgetId: id, cycle: req.cycle, snapshot: snapshot({ ...b, cadets: input.cadets, anos: input.anos, staff: input.staff, demandedPaise: total }, input.lines) } });
+    await tx.campBudgetSubmission.create({ data: { budgetId: id, cycle: req.cycle, snapshot: snapshot({ ...b, cadets: input.cadets, anos: input.anos, staff: input.staff, demandedPaise: total, note: input.note }, lines) } });
     await audit(tx, actor.id, "camp.budget.resubmitted", id, { cycle: req.cycle, demandedPaise: total.toString() });
     return { id, status: req.status, version: input.version + 1 };
   }, serializable);
@@ -169,6 +189,7 @@ async function present(actor: Actor, rows: Row[]) {
     days: r.days,
     demandedPaise: r.demandedPaise.toString(),
     sanctionedPaise: r.sanctionedPaise?.toString() ?? null,
+    note: r.note,
     lines: Object.fromEntries(r.lines.map((l) => [l.head, { quantity: l.quantity, amountPaise: l.amountPaise.toString(), note: l.note }])) as Partial<Record<Head, { quantity: number | null; amountPaise: string; note: string }>>,
     createdAt: r.createdAt,
     mine: r.createdById === actor.id,

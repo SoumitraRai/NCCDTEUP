@@ -27,7 +27,10 @@ const lines = (messing = "450000", bus = "60000") => [
   { head: "BUS_FARE", amount: bus, note: "Two buses" },
   { head: "FUEL_DIESEL", quantity: 200, amount: "18000" },
 ];
-const budget = (campId: string, stage = "INITIAL", by = "co", extra: object = {}) => as(by).then((a) => createBudget(a, { campId, stage, cadets: 280, anos: 10, staff: 4, lines: lines(), ...extra }));
+// The amount demanded matches the breakup unless a test says otherwise.
+const total = (l: { amount: string }[]) => String(l.reduce((n, x) => n + Number(x.amount), 0));
+const budget = (campId: string, stage = "INITIAL", by = "co", extra: { lines?: { head: string; amount: string }[] } & Record<string, unknown> = {}) =>
+  as(by).then((a) => createBudget(a, { campId, stage, cadets: 280, anos: 10, staff: 4, amount: total(extra.lines ?? lines()), lines: lines(), ...extra }));
 const version = async (id: string) => (await db.campBudget.findUniqueOrThrow({ where: { id } })).version;
 const decideAs = async (by: string, id: string, decision: string, extra: object = {}) => decideBudget(await as(by), id, { decision, remarks: "", version: await version(id), ...extra });
 afterAll(async () => {
@@ -62,22 +65,25 @@ describe("camp budgets", () => {
     const c = await camp();
     await expect(budget(c, "INITIAL", "co2")).rejects.toMatchObject({ status: 404 });
     await expect(budget(c, "INITIAL", "dir")).rejects.toMatchObject({ status: 403 });
-    await expect(budget(c, "INITIAL", "co", { lines: [{ head: "MISC", amount: "" }] })).rejects.toThrow("Enter at least one amount.");
+    await expect(budget(c, "INITIAL", "co", { amount: "", lines: [] })).rejects.toThrow("Enter the amount demanded.");
     await expect(budget(c, "INITIAL", "co", { lines: [{ head: "MISC", amount: "1" }, { head: "MISC", amount: "2" }] })).rejects.toThrow("List each head once.");
+    await expect(budget(c, "INITIAL", "co", { amount: "500000" })).rejects.toThrow("The breakup adds up to ₹578000, not the ₹500000 demanded.");
     await budget(c);
     await expect(budget(c, "INITIAL", "ao")).rejects.toThrow("This stage already has a budget.");
     await expect(budget(c, "REVISED")).rejects.toThrow("The initial budget must be sanctioned first.");
     await expect(budget(c, "FINAL")).rejects.toThrow("The initial budget must be sanctioned first.");
   });
-  it("revised while running, final after; each needs the initial sanctioned", async () => {
+  it("initial before the start, revised before the end, final after; each after the initial is sanctioned", async () => {
+    const late = await camp();
+    await when(late, "CURRENT");
+    await expect(budget(late)).rejects.toThrow("The initial budget is prepared before the camp starts.");
     const c = await camp();
     const initial = await budget(c);
     await decideAs("group", initial.id, "RECOMMEND");
     await decideAs("admin", initial.id, "APPROVE");
-    await expect(budget(c, "REVISED")).rejects.toThrow("A revised budget is prepared while the camp is running.");
-    await when(c, "CURRENT");
     const revised = await budget(c, "REVISED", "co", { lines: lines("480000") });
     expect(revised.status).toBe("PENDING");
+    await when(c, "CURRENT");
     await expect(budget(c, "FINAL")).rejects.toThrow("The final budget is prepared after the camp ends.");
     await when(c, "COMPLETED");
     expect((await listBudgets(await as("admin"), { queue: "due" })).due.map((d) => d.id)).toContain(c);
@@ -92,8 +98,8 @@ describe("camp budgets", () => {
     const c = await camp();
     const b = await budget(c);
     await decideAs("group", b.id, "RETURN", { remarks: "Bus fare looks high." });
-    await expect(resubmitBudget(await as("ao"), b.id, { cadets: 280, anos: 10, staff: 4, lines: lines(), version: await version(b.id) })).rejects.toThrow("Only the officer who prepared this budget can change it.");
-    await resubmitBudget(await as("co"), b.id, { cadets: 280, anos: 10, staff: 4, lines: lines("450000", "40000"), version: await version(b.id) });
+    await expect(resubmitBudget(await as("ao"), b.id, { cadets: 280, anos: 10, staff: 4, amount: "578000", lines: lines(), version: await version(b.id) })).rejects.toThrow("Only the officer who prepared this budget can change it.");
+    await resubmitBudget(await as("co"), b.id, { cadets: 280, anos: 10, staff: 4, amount: "558000", lines: lines("450000", "40000"), version: await version(b.id) });
     const after = await getCampBudgets(await as("co"), c);
     const initial = after.stages[0].budget!;
     expect([initial.status, initial.demandedPaise, initial.submissions.length]).toEqual(["PENDING", "55800000", 2]);
@@ -101,6 +107,22 @@ describe("camp budgets", () => {
     expect((await getCampBudgets(await as("co"), c)).stages[0].canPrepare).toBe(true);
     const again = await budget(c);
     expect(again.status).toBe("PENDING");
+  });
+  it("a single amount needs no breakup; planning a camp can submit its initial demand at once", async () => {
+    const c = await camp();
+    const plain = await budget(c, "INITIAL", "co", { amount: "250000", lines: [], note: "Breakup to follow." });
+    const row = await db.campBudget.findUniqueOrThrow({ where: { id: plain.id }, include: { lines: true } });
+    expect([row.demandedPaise, row.lines.length, row.note]).toEqual([25000000n, 0, "Breakup to follow."]);
+    const planned = await createCamp(await as("co"), {
+      unitId: "unit-1", catcNo: `B-${run}-${++n}`, location: "Budget ground", start: inDays(12), end: inDays(15), plannedStrength: 100, seats: [{ unitId: "unit-1", seats: 90 }],
+      budget: { amount: "120000", cadets: 90, anos: 3, staff: 2 },
+    });
+    camps.push(planned.id);
+    expect((await getCampBudgets(await as("admin"), planned.id)).stages[0].budget).toMatchObject({ stage: "INITIAL", status: "PENDING", demandedPaise: "12000000" });
+    // A failing budget plans nothing: camp and demand are saved together.
+    const catcNo = `B-${run}-${++n}`;
+    await expect(createCamp(await as("co"), { unitId: "unit-1", catcNo, location: "X", start: inDays(12), end: inDays(15), plannedStrength: 100, seats: [{ unitId: "unit-1", seats: 90 }], budget: { amount: "100", cadets: 1, anos: 0, staff: 0, lines: [{ head: "MISC", amount: "99" }] } })).rejects.toThrow("The breakup adds up to");
+    expect(await db.camp.count({ where: { catcNo } })).toBe(0);
   });
   it("a Gp Cdr's budget goes straight to the DDG; the preparer never decides", async () => {
     const c = await camp("group");

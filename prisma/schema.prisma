@@ -754,6 +754,8 @@ model CampBudget {
   days Int
   demandedPaise BigInt
   sanctionedPaise BigInt?
+  // Optional; the lines (heads) are an optional breakup adding up to the demand.
+  note String @default("")
   createdById String
   version Int @default(1)
   lines CampBudgetLine[]

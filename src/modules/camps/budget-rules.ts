@@ -34,9 +34,10 @@ export const rupees = z
 // Returns the reason it may not, or null.
 export function stageClosed(stage: Stage, camp: CampState, sanctioned: Partial<Record<Stage, boolean>>): string | null {
   if (camp === "CANCELLED") return "This camp is cancelled.";
-  if (stage === "INITIAL") return camp === "COMPLETED" ? "The initial budget is prepared before the camp ends." : null;
+  // User, 2026-11-25: initial before the camp starts, revised before it ends.
+  if (stage === "INITIAL") return camp === "UPCOMING" ? null : "The initial budget is prepared before the camp starts.";
   if (!sanctioned.INITIAL) return "The initial budget must be sanctioned first.";
-  if (stage === "REVISED") return camp === "CURRENT" ? null : "A revised budget is prepared while the camp is running.";
+  if (stage === "REVISED") return camp === "COMPLETED" ? "A revised budget is prepared before the camp ends." : null;
   return camp === "COMPLETED" ? null : "The final budget is prepared after the camp ends.";
 }
 // Reference figure for a head: quantity × the dated rate, or null where the

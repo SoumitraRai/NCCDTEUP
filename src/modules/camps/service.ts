@@ -7,32 +7,15 @@ import { terms } from "@/modules/platform/query";
 import { istDate, resolveTrainingYear } from "@/modules/platform/training-year";
 import { canSend } from "@/modules/movement/rules";
 import { entersFor, total, unitTotals } from "./enrolment";
+import { DTE_ROLES, GROUP_ROLES, campScope, groupPost, handles, unitPost } from "./access";
+import { budgetFields, prepareBudget } from "./budgets";
 import { campDays, campState, checkPlan, reportDueDate, reportState, type CampState, type ReportState } from "./rules";
 // Camps (docs/superpowers/specs/2026-11-25-camps-design.md).
+export { campScope, handles } from "./access";
 type Tx = Prisma.TransactionClient;
 const serializable = { isolationLevel: "Serializable" as const };
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 const day = (s: string) => new Date(`${s}T00:00:00Z`);
-const GROUP_ROLES = ["GROUP", "GROUP_STAFF"];
-const DTE_ROLES = ["ADMIN", "DTE_STAFF"];
-// Who sees a camp: officers whose post covers its group (or the directorate),
-// and unit officers and ANOs/CTOs whose unit hosts it or has seats in it.
-export function campScope(actor: Actor): Prisma.CampWhereInput {
-  const or: Prisma.CampWhereInput[] = [];
-  for (const a of actor.assignments) {
-    const { unitId, groupId, directorateId } = a.anchor;
-    if (DTE_ROLES.includes(a.role)) or.push({ directorateId });
-    else if (GROUP_ROLES.includes(a.role) && groupId) or.push({ groupId });
-    else if ((a.role === "CO" || a.role === "ANO") && unitId) or.push({ unitId }, { allocations: { some: { unitId } } });
-  }
-  return or.length ? { OR: or } : { id: { in: [] } };
-}
-// Units whose camps this actor plans and reports: CO/AO their own unit, group
-// officers every unit of their group.
-const unitPost = (a: Assignment) => a.role === "CO" && a.level === "UNIT" && !!a.anchor.unitId;
-const groupPost = (a: Assignment) => GROUP_ROLES.includes(a.role) && a.level === "GROUP" && !!a.anchor.groupId;
-export const handles = (actor: Actor, camp: { unitId: string; groupId: string }) =>
-  actor.assignments.some((a) => (unitPost(a) && a.anchor.unitId === camp.unitId) || (groupPost(a) && a.anchor.groupId === camp.groupId));
 // Seniority is the TD rule (user, 2026-11-25): one may overrule, change or
 // review another's work on a camp only if one outranks them (movement/rules
 // canSend). `posts` are the other person's live posts tied to this camp.
@@ -83,6 +66,8 @@ const planInput = z
   .strict();
 const version = { version: z.number().int().positive() };
 const editInput = planInput.omit({ unitId: true }).extend(version).strict();
+// Planning may also submit the initial budget in the same step.
+const createInput = planInput.extend({ budget: z.object(budgetFields).strict().optional() }).strict();
 const cancelInput = z.object({ reason: z.string().trim().min(3, "Give a reason for cancelling.").max(500), ...version }).strict();
 const reportInput = z.object({ attendance: z.array(z.object({ unitId: z.string().min(1).max(40), attended: count.min(0, "Attendance cannot be negative.").max(5000) }).strict()).max(60), ...version }).strict();
 const decisionInput = z
@@ -114,7 +99,7 @@ const fields = (input: z.infer<typeof editInput>) => ({
   details: input.details,
 });
 export async function createCamp(actor: Actor, raw: unknown) {
-  const input = planInput.parse(raw);
+  const { budget, ...input } = createInput.parse(raw);
   const host = await db.unit.findUnique({ where: { id: input.unitId }, include: { group: true } });
   if (!host || !handles(actor, { unitId: host.id, groupId: host.groupId })) throw new AppError(403, "You can plan camps only for your unit or the units of your group.");
   if (input.start <= istDate()) throw new AppError(400, "Plan a camp that starts after today.");
@@ -133,7 +118,8 @@ export async function createCamp(actor: Actor, raw: unknown) {
         },
       });
       await audit(tx, actor.id, "camp.planned", camp.id, { catcNo: camp.catcNo, seats: input.seats });
-      return { id: camp.id, version: camp.version };
+      const initial = budget ? await prepareBudget(tx, actor, camp, { stage: "INITIAL", ...budget }) : null;
+      return { id: camp.id, version: camp.version, budgetId: initial?.id ?? null };
     }, serializable)
     .catch(unique);
 }
