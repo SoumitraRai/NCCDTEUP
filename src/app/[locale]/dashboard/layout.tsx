@@ -12,6 +12,7 @@ import { canApproveOfficers, pendingOfficerRequests } from "@/modules/identity/o
 import { currentActor, reviewer } from "@/components/app/session";
 import { dict } from "@/components/app/i18n";
 import { LanguageLink } from "@/components/language-link";
+import { budgetInbox } from "@/modules/camps/budgets";
 import { Nav, SignOut, ThemeSwitch, YearPicker, type NavItem } from "@/components/app/shell-client";
 const plex = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-plex", display: "swap" });
 const plexDeva = IBM_Plex_Sans_Devanagari({ subsets: ["devanagari"], weight: ["400", "500", "600"], variable: "--font-plex-deva", display: "swap" });
@@ -43,7 +44,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps<
   const cadet = roles.every((r) => r === "CADET");
   const approvesOfficers = await canApproveOfficers(actor);
   const officer = isOfficer(actor);
-  const [years, { year }, inbox, waitingMembers, waitingOfficers, tdWaiting, tdUnread] = await Promise.all([
+  const [years, { year }, inbox, waitingMembers, waitingOfficers, tdWaiting, tdUnread, budgetWaiting] = await Promise.all([
     trainingYears(),
     resolveTrainingYear(),
     reviewer(roles) ? billInbox(actor) : [],
@@ -51,12 +52,13 @@ export default async function DashboardLayout({ children, params }: LayoutProps<
     approvesOfficers ? pendingOfficerRequests(actor) : 0,
     officer ? tdInbox(actor) : [],
     officer ? tdNotices(actor) : [],
+    officer ? budgetInbox(actor) : [],
   ]);
   const waiting = waitingMembers + waitingOfficers;
   const base = `/${locale}/dashboard`;
   const items: NavItem[] = [
     { href: base, label: t.overview, icon: "overview" },
-    ...(reviewer(roles) || officer ? [{ href: `${base}/approvals`, label: t.pending, icon: "approvals" as const, count: inbox.length + tdWaiting.length }] : []),
+    ...(reviewer(roles) || officer ? [{ href: `${base}/approvals`, label: t.pending, icon: "approvals" as const, count: inbox.length + tdWaiting.length + budgetWaiting.length }] : []),
     { href: `${base}/visits`, label: t.visits, icon: "visits", section: t.sectionVisits },
     ...(cadet
       ? []

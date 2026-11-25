@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowUpRight, CornerUpLeft, FilePen, Inbox, Plane, Tent } from "lucide-react";
+import { ArrowUpRight, CornerUpLeft, FilePen, Inbox, Plane, Tent, Wallet } from "lucide-react";
 import { getLocale } from "@/lib/localization/messages";
 import { visitExceptions, visitMetrics } from "@/modules/visits/service";
 import { billInbox, billSummary, myBillWork } from "@/modules/bills/service";
 import { tdInbox, tdNotices } from "@/modules/movement/service";
 import { campWork } from "@/modules/camps/service";
+import { budgetInbox } from "@/modules/camps/budgets";
 import { isOfficer } from "@/modules/identity/officers";
 import { tdDates } from "@/components/app/td-detail";
 import { currentActor, reviewer } from "@/components/app/session";
@@ -23,7 +24,7 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
   const roles = actor.assignments.map((a) => a.role);
   const cadet = roles.every((r) => r === "CADET");
   const officer = isOfficer(actor);
-  const [metrics, exceptions, inbox, mine, refreshment, honorarium, tdWaiting, notices, camps] = await Promise.all([
+  const [metrics, exceptions, inbox, mine, refreshment, honorarium, tdWaiting, notices, camps, budgetWaiting] = await Promise.all([
     visitMetrics(actor, year),
     visitExceptions(actor, year),
     reviewer(roles) ? billInbox(actor) : [],
@@ -33,6 +34,7 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
     officer ? tdInbox(actor) : [],
     officer ? tdNotices(actor) : [],
     cadet ? null : campWork(actor, year),
+    officer ? budgetInbox(actor) : [],
   ]);
   const base = `/${locale}/dashboard`;
   const q = year ? `?year=${year}` : "";
@@ -44,6 +46,7 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
   const queue = [
     reviewer(roles) && { href: `${base}/approvals`, icon: Inbox, count: inbox.length, label: t.waiting, since: inbox[0]?.waitingSince, tone: "text-accent" },
     tdWaiting.length > 0 && { href: `${base}/approvals`, icon: Plane, count: tdWaiting.length, label: t.tdWaiting, since: tdWaiting[0]?.waitingSince, tone: "text-accent" },
+    budgetWaiting.length > 0 && { href: budgetWaiting.length === 1 ? `${base}/camps?view=budgets&budget=${budgetWaiting[0].campId}` : `${base}/camps?view=budgets`, icon: Wallet, count: budgetWaiting.length, label: t.budgetWaiting, since: budgetWaiting[0].waitingSince, tone: "text-accent" },
     camps && camps.toReview.length > 0 && { href: camps.toReview.length === 1 ? `${base}/camps?view=reports&report=SUBMITTED&open=${camps.toReview[0].id}` : `${base}/camps?view=reports&report=SUBMITTED`, icon: Tent, count: camps.toReview.length, label: t.campReview, since: camps.toReview[0].since, tone: "text-accent" },
     camps && camps.toReport.length > 0 && { href: camps.toReport.length === 1 ? `${base}/camps?view=reports&report=${camps.toReport[0].report}&open=${camps.toReport[0].id}` : `${base}/camps?view=reports`, icon: Tent, count: camps.toReport.length, label: t.campReport, since: new Date(`${camps.toReport[0].end}T00:00:00Z`), tone: camps.toReport.some((c) => c.report !== "DUE") ? "text-danger" : "text-warning" },
     mine.returned.length > 0 && { href: ownLink(mine.returned, "RETURNED"), icon: CornerUpLeft, count: mine.returned.length, label: t.returned, since: mine.returned[0]?.updatedAt, tone: "text-warning" },
