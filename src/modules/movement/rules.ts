@@ -32,7 +32,9 @@ export function chainLevel(assignments: Assignment[]) {
 // formation below its own, and in its own formation only someone it outranks.
 // In the directorate ADG > DDG > Director; in a group Gp Cdr > DGC; in a unit
 // the CO. Every other officer ranks 0, so peers cannot send each other.
-// A typed-in traveller (no account) is passed with no appointment.
+// A typed-in traveller (no account: PI, GCI, staff) is passed with no
+// appointment and is junior to every officer of their formation (user,
+// 2026-11-25), so an AO may send their unit's PI.
 const sendRank: Record<string, number> = { ADG: 3, DDG: 2, DIR: 1, GP_CDR: 2, DGC: 1, CO: 1 };
 const depth: Record<string, number> = { UNIT: 1, GROUP: 2, DIRECTORATE: 3 };
 const formationKey = { 1: "unitId", 2: "groupId", 3: "directorateId" } as const;
@@ -45,7 +47,7 @@ export function within(sender: Post, traveller: Post) {
 }
 export function canSend(sender: Post, traveller: Post) {
   if (!within(sender, traveller)) return false;
-  if (depth[traveller.level] < depth[sender.level]) return true;
+  if (depth[traveller.level] < depth[sender.level] || !traveller.appointmentCode) return true;
   const rank = (p: Post) => (p.appointmentCode && sendRank[p.appointmentCode]) || 0;
   return depth[traveller.level] === depth[sender.level] && rank(sender) > rank(traveller);
 }

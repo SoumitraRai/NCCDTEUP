@@ -73,13 +73,17 @@ describe("who may send whom", () => {
     for (const t of [ADG, DDG, DIR, BRANCH]) expect(canSend(AD_ADM, t)).toBe(false);
     expect(canSend(BRANCH, AD_ADM)).toBe(false);
     expect([canSend(AD_ADM, GP_CDR), canSend(BRANCH, CO), canSend(AD_ADM, typed("UNIT"))]).toEqual([true, true, true]);
-    expect(canSend(AD_ADM, typed("DIRECTORATE"))).toBe(false);
+  });
+  it("someone typed in (PI, GCI, staff) is junior to every officer of their formation", () => {
+    expect([canSend(AO, typed("UNIT")), canSend(GP_TRG, typed("GROUP")), canSend(AD_ADM, typed("DIRECTORATE"))]).toEqual([true, true, true]);
+    expect(canSend(AO, { ...typed("UNIT"), anchor: { ...AO.anchor, unitId: "unit-9" } })).toBe(false);
+    expect(canSend(AO, typed("GROUP"))).toBe(false);
   });
   it("the same in a group and a unit", () => {
     for (const t of [DGC, GP_TRG, CO, AO]) expect(canSend(GP_CDR, t)).toBe(true);
     expect([canSend(DGC, GP_CDR), canSend(DGC, GP_TRG), canSend(DGC, CO)]).toEqual([false, true, true]);
     expect([canSend(GP_TRG, DGC), canSend(GP_TRG, GP_CDR), canSend(GP_TRG, CO)]).toEqual([false, false, true]);
-    expect([canSend(CO, AO), canSend(CO, typed("UNIT")), canSend(AO, CO), canSend(AO, typed("UNIT"))]).toEqual([true, true, false, false]);
+    expect([canSend(CO, AO), canSend(CO, typed("UNIT")), canSend(AO, CO)]).toEqual([true, true, false]);
   });
   it("never upwards or outside the formation", () => {
     expect(canSend(CO, GP_CDR)).toBe(false);
