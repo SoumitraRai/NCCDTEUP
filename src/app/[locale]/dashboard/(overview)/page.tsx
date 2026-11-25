@@ -1,14 +1,15 @@
 import Link from "next/link";
-import { ArrowUpRight, CornerUpLeft, FilePen, Inbox, Plane } from "lucide-react";
+import { ArrowUpRight, CornerUpLeft, FilePen, Inbox, Plane, Tent } from "lucide-react";
 import { getLocale } from "@/lib/localization/messages";
 import { visitExceptions, visitMetrics } from "@/modules/visits/service";
 import { billInbox, billSummary, myBillWork } from "@/modules/bills/service";
 import { tdInbox, tdNotices } from "@/modules/movement/service";
+import { campWork } from "@/modules/camps/service";
 import { isOfficer } from "@/modules/identity/officers";
 import { tdDates } from "@/components/app/td-detail";
 import { currentActor, reviewer } from "@/components/app/session";
 import { MonthBars, Progress } from "@/components/app/charts";
-import { ago, inr } from "@/components/app/format";
+import { ago, day, inr } from "@/components/app/format";
 import { dict } from "@/components/app/i18n";
 export async function generateMetadata({ params }: PageProps<"/[locale]/dashboard">) {
   return { title: dict((await params).locale).overview.title };
@@ -22,7 +23,7 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
   const roles = actor.assignments.map((a) => a.role);
   const cadet = roles.every((r) => r === "CADET");
   const officer = isOfficer(actor);
-  const [metrics, exceptions, inbox, mine, refreshment, honorarium, tdWaiting, notices] = await Promise.all([
+  const [metrics, exceptions, inbox, mine, refreshment, honorarium, tdWaiting, notices, camps] = await Promise.all([
     visitMetrics(actor, year),
     visitExceptions(actor, year),
     reviewer(roles) ? billInbox(actor) : [],
@@ -31,6 +32,7 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
     cadet ? null : billSummary(actor, "HONORARIUM", year),
     officer ? tdInbox(actor) : [],
     officer ? tdNotices(actor) : [],
+    cadet ? null : campWork(actor, year),
   ]);
   const base = `/${locale}/dashboard`;
   const q = year ? `?year=${year}` : "";
@@ -42,6 +44,8 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
   const queue = [
     reviewer(roles) && { href: `${base}/approvals`, icon: Inbox, count: inbox.length, label: t.waiting, since: inbox[0]?.waitingSince, tone: "text-accent" },
     tdWaiting.length > 0 && { href: `${base}/approvals`, icon: Plane, count: tdWaiting.length, label: t.tdWaiting, since: tdWaiting[0]?.waitingSince, tone: "text-accent" },
+    camps && camps.toReview.length > 0 && { href: camps.toReview.length === 1 ? `${base}/camps?view=reports&report=SUBMITTED&open=${camps.toReview[0].id}` : `${base}/camps?view=reports&report=SUBMITTED`, icon: Tent, count: camps.toReview.length, label: t.campReview, since: camps.toReview[0].since, tone: "text-accent" },
+    camps && camps.toReport.length > 0 && { href: camps.toReport.length === 1 ? `${base}/camps?view=reports&report=${camps.toReport[0].report}&open=${camps.toReport[0].id}` : `${base}/camps?view=reports`, icon: Tent, count: camps.toReport.length, label: t.campReport, since: new Date(`${camps.toReport[0].end}T00:00:00Z`), tone: camps.toReport.some((c) => c.report !== "DUE") ? "text-danger" : "text-warning" },
     mine.returned.length > 0 && { href: ownLink(mine.returned, "RETURNED"), icon: CornerUpLeft, count: mine.returned.length, label: t.returned, since: mine.returned[0]?.updatedAt, tone: "text-warning" },
     mine.drafts.length > 0 && { href: ownLink(mine.drafts, "DRAFT"), icon: FilePen, count: mine.drafts.length, label: t.drafts, since: mine.drafts[0]?.updatedAt, tone: "text-muted" },
   ].filter(Boolean) as { href: string; icon: typeof Inbox; count: number; label: string; since?: Date; tone: string }[];
@@ -145,6 +149,34 @@ export default async function Overview({ params, searchParams }: PageProps<"/[lo
           </div>
         </div>
       </section>
+
+      {camps && (
+        <section aria-labelledby="camps">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 id="camps" className="text-base font-semibold">{t.campsYear}</h2>
+            <Link href={`${base}/camps${q}`} className="text-[13px] text-primary hover:underline">{t.campsAll}</Link>
+          </div>
+          <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {([
+              [T.camps.tiles.CURRENT, camps.camps.filter((c) => c.state === "CURRENT").length, `state=CURRENT`, ""],
+              [T.camps.tiles.UPCOMING, camps.camps.filter((c) => c.state === "UPCOMING").length, `state=UPCOMING`, ""],
+              [T.status.report.DUE, camps.camps.filter((c) => c.report === "DUE").length, `view=reports&report=DUE`, ""],
+              [T.camps.tiles.OVERDUE, camps.camps.filter((c) => c.report === "OVERDUE").length, `view=reports&report=OVERDUE`, "text-danger"],
+            ] as const).map(([label, n, link, tone]) => (
+              <li key={label}>
+                <Link href={`${base}/camps?${link}${year ? `&year=${year}` : ""}`} className="block rounded-xl border bg-surface px-4 py-3 hover:bg-surface-2/70">
+                  <p className="text-[13px] text-muted">{label}</p>
+                  <p className={`mt-1 text-2xl font-semibold tabular-nums ${n > 0 ? tone : ""}`}>{n}</p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {(() => {
+            const next = camps.camps.find((c) => c.state === "UPCOMING");
+            return <p className="mt-3 text-[13.5px] text-muted">{next ? t.nextCamp(T.camps.catc(next.catcNo), `${next.location} (${next.unit.name})`, day(next.start, locale)) : t.noNextCamp}</p>;
+          })()}
+        </section>
+      )}
 
       {refreshment && honorarium && (
         <section aria-labelledby="bills">

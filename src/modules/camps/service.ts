@@ -234,6 +234,7 @@ function present(c: CampRow, today: string) {
     catcNo: c.catcNo,
     unit: { id: c.unitId, name: c.unit.name },
     group: { id: c.groupId, name: c.group.name },
+    directorateId: c.directorateId,
     location: c.location,
     start: at.start,
     end: at.end,
@@ -339,4 +340,16 @@ export async function campOptions(actor: Actor) {
   const groupIds = [...new Set(hosts.map((u) => u.groupId))];
   const siblings = await db.unit.findMany({ where: { groupId: { in: groupIds } }, select: { id: true, name: true, groupId: true }, orderBy: { name: "asc" } });
   return { hosts, units: siblings, canPlan: hosts.length > 0 };
+}
+// For the Overview: camp reports this actor should review, and reports their
+// unit or group owes (due, overdue or returned), oldest camp first.
+export async function campWork(actor: Actor, year?: string) {
+  const { camps } = await listCamps(actor, { year });
+  const toReport = camps.filter((c) => ["DUE", "OVERDUE", "RETURNED"].includes(c.report) && handles(actor, { unitId: c.unit.id, groupId: c.group.id }));
+  const submitted = camps.filter((c) => c.report === "SUBMITTED");
+  const lasts = await db.campReportSubmission.findMany({ where: { campId: { in: submitted.map((c) => c.id) } }, orderBy: { round: "desc" }, distinct: ["campId"] });
+  const by = new Map(lasts.map((l) => [l.campId, l]));
+  const flags = await Promise.all(submitted.map((c) => reviews(actor, { unitId: c.unit.id, groupId: c.group.id, directorateId: c.directorateId }, by.get(c.id)?.submittedById)));
+  const toReview = submitted.filter((_, i) => flags[i]).map((c) => ({ ...c, since: by.get(c.id)!.createdAt }));
+  return { toReport, toReview, camps };
 }
