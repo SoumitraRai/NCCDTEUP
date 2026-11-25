@@ -268,3 +268,58 @@ function totp(base32: string) {
   const o = h[h.length - 1] & 15;
   return String((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, "0");
 }
+test("AO requests TD, it passes all five steps, CO sends a typed-in PI", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const run = Date.now();
+  const day = (n: number) => new Date(Date.parse(`${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date())}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  // Each officer signs in from their own client address (sign-in is rate-limited).
+  const signIn = async (id: string, n: number) => {
+    const page = await (await browser.newContext({ extraHTTPHeaders: { "x-forwarded-for": `198.18.${n}.${run % 250}` } })).newPage();
+    await page.goto("/en/login");
+    await page.getByLabel("Email address").fill(`${id}@sampark.test`);
+    await page.getByLabel("Password", { exact: true }).fill("Sampark-Demo-2026!");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/dashboard/);
+    return page;
+  };
+  const axe = async (page: import("@playwright/test").Page) =>
+    expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze()).violations).toEqual([]);
+  const ao = await signIn("ao", 1);
+  await ao.getByRole("link", { name: "Temporary duty" }).click();
+  await ao.getByRole("link", { name: "New TD" }).click();
+  await ao.getByLabel("To", { exact: true }).fill("Lucknow");
+  await ao.getByLabel("Starts", { exact: true }).fill(day(5));
+  await ao.getByLabel("Returns", { exact: true }).fill(day(6));
+  await expect(ao.getByRole("status").filter({ hasText: "2 days of duty" })).toBeVisible();
+  await ao.getByLabel("Purpose").fill(`E2E board of officers ${run}`);
+  await ao.getByRole("button", { name: "Send for approval" }).click();
+  await expect(ao).toHaveURL(/open=/);
+  const link = `/en/dashboard/movement/td?open=${new URL(ao.url()).searchParams.get("open")}`;
+  await expect(ao.getByRole("dialog")).toContainText("In the chain");
+  await axe(ao);
+  for (const [i, [id, decision]] of ([["group", "Recommend"], ["branch", "Recommend"], ["dir", "Recommend"], ["admin", "Recommend"], ["adg", "Approve"]] as const).entries()) {
+    const officer = await signIn(id, i + 2);
+    await officer.goto(link);
+    await officer.getByRole("button", { name: decision, exact: true }).click();
+    await expect(officer.getByRole("button", { name: decision, exact: true })).toHaveCount(0);
+    await officer.context().close();
+  }
+  await ao.goto(link);
+  await expect(ao.getByRole("dialog")).toContainText("Approved");
+  await expect(ao.getByRole("dialog")).toContainText("Approved (Additional Director General) by Demo ADG");
+  const co = await signIn("co", 9);
+  await co.goto("/en/dashboard/movement/td?new=1");
+  await co.getByText("Send someone").click();
+  await co.getByLabel("Someone not on Sampark (PI, GCI, staff)").check();
+  await co.getByLabel("Rank").fill("Sub");
+  await co.getByLabel("Name", { exact: true }).fill(`E2E PI ${run}`);
+  await co.getByLabel("Unit, group or directorate").selectOption({ label: "Demo Unit 1" });
+  await co.getByLabel("To", { exact: true }).fill("Agra");
+  await co.getByLabel("Starts", { exact: true }).fill(day(1));
+  await co.getByLabel("Returns", { exact: true }).fill(day(1));
+  await co.getByLabel("Purpose").fill(`E2E escort ${run}`);
+  await co.getByRole("button", { name: "Send for approval" }).click();
+  await expect(co.getByRole("dialog")).toContainText(`Sub E2E PI ${run}`);
+  await expect(co.getByRole("dialog")).toContainText("No Sampark account");
+  await axe(co);
+});

@@ -15,7 +15,10 @@ const linkFor = async (to: string) => {
 };
 const signIn = (e: string, password: string) => auth.api.signInEmail({ body: { email: e, password } }).then(() => true, () => false);
 let adgUser = "";
+// ADG posts this file vacates; given back afterwards so seeded holders keep working.
+let vacated: string[] = [];
 afterAll(async () => {
+  if (vacated.length) await db.roleAssignment.updateMany({ where: { id: { in: vacated } }, data: { active: true } });
   if (adgUser) {
     await db.session.deleteMany({ where: { userId: adgUser } });
     await db.account.deleteMany({ where: { userId: adgUser } });
@@ -38,7 +41,8 @@ describe("post accounts", () => {
   });
   it("sets up a vacant post; the holder sets a password once", async () => {
     const admin = await actorById("admin");
-    await db.roleAssignment.updateMany({ where: { appointmentCode: "ADG" }, data: { active: false } });
+    vacated = (await db.roleAssignment.findMany({ where: { appointmentCode: "ADG", active: true }, select: { id: true } })).map((a) => a.id);
+    await db.roleAssignment.updateMany({ where: { id: { in: vacated } }, data: { active: false } });
     expect(await setPostHolder(admin, "ADG", { name: "Lt Gen First", email: email("first"), phone: "9000000013" })).toMatchObject({ code: "ADG", status: "created", delivery: "email" });
     const u = await db.user.findUniqueOrThrow({ where: { email: email("first") }, include: { assignments: true } });
     adgUser = u.id;

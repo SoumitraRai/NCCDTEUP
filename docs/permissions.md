@@ -45,6 +45,14 @@ Ending or moving an officer's post (Officers page, "Change post") follows the sa
 
 The DDG or ADG gives or withdraws the `movement` duty for directorate officers on the Officers page ("TD branch"). Its holders act at the Branch step of a temporary duty request. It cannot be given on one's own post, by a duty holder, or to a group or unit officer.
 
+## Temporary duty (TD)
+
+- **Who raises one:** an officer for themselves, from one of their own unit, group or directorate posts (at least two days' notice, a development default); or an officer sending someone junior, by account or typed in by name and rank (no notice). Junior means in a formation below the sender's post, or in the same formation and outranked by it: in the directorate ADG > DDG > Director, in a group Gp Cdr > DGC, in a unit the CO; every other officer (AO, group staff, branch and other directorate officers) sends only into lower formations, never a peer or a senior. A traveller holding several posts must be junior in every one within the sender's formation (user decision, 2026-11-24). ANOs, CTOs and cadets cannot raise TDs.
+- **Chain:** Gp Cdr of the traveller's group, Branch (`movement` duty), Director, DDG, ADG, matched by post within the traveller's formation chain. It starts one step above the more senior of creator and traveller; when nobody is above, the TD is recorded as approved ("top of chain").
+- **Who decides:** only the holder of the current step; never the creator or the traveller, even after the traveller's post ends.
+- **Who sees it:** the creator, the traveller, and officers whose post covers the traveller's unit, group or directorate. Never public.
+- **Changes:** only the creator cancels (pending or returned) or edits and sends again (returned); every change is versioned, snapshotted per round and audited. An account-holding traveller of a TD someone else created gets an in-app notice on creation, edit, cancellation and the final decision.
+
 ## DDG and ADG post accounts
 
 These posts are closed to registration. A directorate admin (role `ADMIN`) sets up the account on the Directorate posts page and, when the holder changes, updates name, email and phone. A handover deletes the old password, authenticator and sessions and creates a one-time set-password link (24 hours, hash stored). With email verification on it is emailed to the new address; otherwise (the default) it is shown once to the admin to hand over in person. Nobody sets up or hands over the post they hold. Every set-up and handover is audited with the previous holder's name and email.

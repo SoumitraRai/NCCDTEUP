@@ -6,6 +6,7 @@ Sampark is a local-first modular monolith: Next.js 16.4.6 App Router, React 19.3
 
 - `src/server/authorization`: authenticate, live assignments, action-specific organizational scope, explicit capabilities, separation of duties. Route groups are not a security boundary.
 - `src/modules/finance`: deterministic integer-paise calculation, immutable submitted snapshots, versioned transitions, serializable transactions, payment and reversal ledger.
+- `src/modules/movement`: temporary duty requests on the shared approval engine (formation chains, post and duty steps, start index), per-round snapshots and traveller notices. Day count and notice are development defaults.
 - `src/modules/publications`: reviewed revisions and a physically separate `PublicContent` projection. Public queries explicitly select safe fields. No private-record fetch is used to render a public page.
 - `src/server/storage` and `src/server/jobs`: authorized intents, private quarantine, real ClamAV INSTREAM scanner, clean object isolation, expiring downloads. Public derivative delivery rechecks a live publication.
 - `src/app/api/private/[...path]`: thin HTTP boundary, strict input schemas, same-origin mutation check, private no-store responses. Generic records and administration currently live here; extract domains as their workflows expand.
