@@ -87,6 +87,7 @@ model Group {
   directorate Directorate @relation(fields:[directorateId],references:[id])
   units Unit[]
   assignments RoleAssignment[]
+  camps Camp[]
 }
 model Unit {
   id String @id @default(cuid())
@@ -95,6 +96,8 @@ model Unit {
   group Group @relation(fields:[groupId],references:[id])
   institutions Institution[]
   assignments RoleAssignment[]
+  camps Camp[]
+  campSeats CampAllocation[]
 }
 model Institution {
   id String @id @default(cuid())
@@ -652,4 +655,64 @@ model PasswordSetup {
   usedAt DateTime?
   createdAt DateTime @default(now())
   @@index([userId])
+}
+// Camps (CATC), docs/superpowers/specs/2026-11-25-camps-design.md.
+// Hosted by one unit; seats allocated to units of the same group.
+// State Upcoming/Current/Completed is derived from the dates (IST).
+model Camp {
+  id String @id @default(cuid())
+  trainingYear String
+  catcNo String
+  unitId String
+  unit Unit @relation(fields:[unitId],references:[id])
+  groupId String
+  group Group @relation(fields:[groupId],references:[id])
+  directorateId String
+  location String
+  startDate DateTime @db.Date
+  endDate DateTime @db.Date
+  plannedStrength Int
+  details String @default("")
+  // PLANNED or CANCELLED.
+  status String @default("PLANNED")
+  cancelReason String @default("")
+  // NONE, SUBMITTED, ACCEPTED or RETURNED.
+  reportStatus String @default("NONE")
+  version Int @default(1)
+  createdById String
+  allocations CampAllocation[]
+  reports CampReportSubmission[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([groupId,trainingYear,catcNo])
+  @@index([trainingYear,startDate])
+  @@index([unitId])
+}
+model CampAllocation {
+  id String @id @default(cuid())
+  campId String
+  camp Camp @relation(fields:[campId],references:[id],onDelete:Cascade)
+  unitId String
+  unit Unit @relation(fields:[unitId],references:[id])
+  seats Int
+  // From the latest submitted report; null until then.
+  attended Int?
+  @@unique([campId,unitId])
+  @@index([unitId])
+}
+// One row per report round, never changed except for its decision.
+model CampReportSubmission {
+  id String @id @default(cuid())
+  campId String
+  camp Camp @relation(fields:[campId],references:[id],onDelete:Cascade)
+  round Int
+  snapshot Json
+  submittedById String
+  createdAt DateTime @default(now())
+  // ACCEPTED or RETURNED once decided.
+  decision String?
+  decidedById String?
+  decidedAt DateTime?
+  remarks String @default("")
+  @@unique([campId,round])
 }
