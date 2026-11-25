@@ -31,7 +31,7 @@ export function campScope(actor: Actor): Prisma.CampWhereInput {
 // officers every unit of their group.
 const unitPost = (a: Assignment) => a.role === "CO" && a.level === "UNIT" && !!a.anchor.unitId;
 const groupPost = (a: Assignment) => GROUP_ROLES.includes(a.role) && a.level === "GROUP" && !!a.anchor.groupId;
-const handles = (actor: Actor, camp: { unitId: string; groupId: string }) =>
+export const handles = (actor: Actor, camp: { unitId: string; groupId: string }) =>
   actor.assignments.some((a) => (unitPost(a) && a.anchor.unitId === camp.unitId) || (groupPost(a) && a.anchor.groupId === camp.groupId));
 // Seniority is the TD rule (user, 2026-11-25): one may overrule, change or
 // review another's work on a camp only if one outranks them (movement/rules

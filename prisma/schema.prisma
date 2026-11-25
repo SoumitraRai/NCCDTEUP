@@ -760,7 +760,9 @@ model CampBudget {
   submissions CampBudgetSubmission[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@unique([campId,stage])
+  // At most one open (not cancelled or rejected) budget per camp and stage:
+  // a partial unique index in the migration, which Prisma cannot express.
+  @@index([campId,stage])
   @@index([status])
 }
 model CampBudgetLine {
