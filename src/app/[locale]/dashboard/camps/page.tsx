@@ -37,10 +37,12 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
     return `?${next}`;
   };
   const groups = strength.groups.map((g) => [g.id, g.name] as [string, string]);
-  const tiles: [string, number, string][] = [
-    [t.tiles.total, list.total, href({ view: null, state: null, report: null, open: null })],
-    ...(["UPCOMING", "CURRENT", "COMPLETED"] as const).map((s) => [t.tiles[s], list.states[s], href({ view: null, state: s, report: null, open: null })] as [string, number, string]),
-    [t.tiles.OVERDUE, list.reports.OVERDUE, href({ view: "reports", report: "OVERDUE", state: null, open: null })],
+  // [label, count, link, selected]: the tile matching the filter in use stays
+  // highlighted so nobody forgets the list is filtered.
+  const tiles: [string, number, string, boolean][] = [
+    [t.tiles.total, list.total, href({ view: null, state: null, report: null, open: null }), view === "timeline" && !state],
+    ...(["UPCOMING", "CURRENT", "COMPLETED"] as const).map((s) => [t.tiles[s], list.states[s], href({ view: null, state: s, report: null, open: null }), view === "timeline" && state === s] as [string, number, string, boolean]),
+    [t.tiles.OVERDUE, list.reports.OVERDUE, href({ view: "reports", report: "OVERDUE", state: null, open: null }), view === "reports" && queue === "OVERDUE"],
   ];
   return (
     <div className="space-y-6">
@@ -56,10 +58,11 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
         )}
       </div>
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {tiles.map(([label, n, link], i) => (
+        {tiles.map(([label, n, link, selected], i) => (
           <li key={label}>
-            <Link href={link} scroll={false} className="block rounded-xl border bg-surface px-4 py-3 hover:bg-surface-2/70">
-              <p className="text-[13px] text-muted">{label}</p>
+            <Link href={link} scroll={false} aria-current={selected ? "true" : undefined}
+              className={`block rounded-xl border px-4 py-3 ${selected ? "border-primary bg-primary-soft ring-1 ring-primary" : "bg-surface hover:bg-surface-2/70"}`}>
+              <p className={`text-[13px] ${selected ? "font-medium text-primary" : "text-muted"}`}>{label}</p>
               <p className={`mt-1 text-2xl font-semibold tabular-nums ${i === 4 && n > 0 ? "text-danger" : ""}`}>{n}</p>
             </Link>
           </li>

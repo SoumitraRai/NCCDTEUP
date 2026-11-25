@@ -11,6 +11,7 @@ import { isOfficer } from "@/modules/identity/officers";
 import { canApproveOfficers, pendingOfficerRequests } from "@/modules/identity/officer-registration";
 import { currentActor, reviewer } from "@/components/app/session";
 import { dict } from "@/components/app/i18n";
+import { LanguageLink } from "@/components/language-link";
 import { Nav, SignOut, ThemeSwitch, YearPicker, type NavItem } from "@/components/app/shell-client";
 const plex = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-plex", display: "swap" });
 const plexDeva = IBM_Plex_Sans_Devanagari({ subsets: ["devanagari"], weight: ["400", "500", "600"], variable: "--font-plex-deva", display: "swap" });
@@ -111,9 +112,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps<
           <Suspense>
             <YearPicker years={years.map((y) => y.label)} current={year.label} />
           </Suspense>
-          <a href={`/${locale === "en" ? "hi" : "en"}/dashboard`} className="text-[13px] text-muted hover:text-ink" lang={locale === "en" ? "hi" : "en"}>
-            {locale === "en" ? "हिन्दी" : "English"}
-          </a>
+          <LanguageLink locale={locale} className="text-[13px] text-muted hover:text-ink" />
           <ThemeSwitch />
         </header>
         <main id="main" className="mx-auto max-w-[1360px] px-4 py-6 sm:px-8 sm:py-8">

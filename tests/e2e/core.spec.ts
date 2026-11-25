@@ -402,7 +402,14 @@ test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the direct
   await ddg.goto(link);
   await expect(ddg.getByRole("dialog")).toContainText("Report accepted");
   await expect(ddg.getByRole("button", { name: "Accept report" })).toHaveCount(0);
-  await co.goto("/hi/dashboard/camps");
-  await expect(co.getByRole("heading", { name: "कैंप (CATC)" })).toBeVisible();
-  await axe(co);
+  // The selected tile stays highlighted, and the language switch keeps the page and filter.
+  await ddg.goto("/en/dashboard/camps?state=UPCOMING");
+  await expect(ddg.getByRole("link", { name: /^Upcoming/ })).toHaveAttribute("aria-current", "true");
+  await expect(ddg.getByRole("link", { name: /^Total camps/ })).not.toHaveAttribute("aria-current", "true");
+  await ddg.getByRole("link", { name: "हिन्दी" }).click();
+  await expect(ddg).toHaveURL(/\/hi\/dashboard\/camps\?state=UPCOMING$/);
+  await expect(ddg.getByRole("heading", { name: "कैंप (CATC)" })).toBeVisible();
+  await axe(ddg);
+  await ddg.getByRole("link", { name: "English" }).click();
+  await expect(ddg).toHaveURL(/\/en\/dashboard\/camps\?state=UPCOMING$/);
 });

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowUpRight, ShieldCheck } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
+import { LanguageLink } from "./language-link";
 import { messages, type Locale } from "@/lib/localization/messages";
 export function PublicShell({
   locale,
@@ -36,13 +37,7 @@ export function PublicShell({
           <Link href={`/${locale}/notices`}>{t.notices}</Link>
         </nav>
         <div className="header-tools">
-          <Link
-            className="language"
-            href={`/${locale === "en" ? "hi" : "en"}`}
-            lang={locale === "en" ? "hi" : "en"}
-          >
-            {locale === "en" ? "हिन्दी" : "English"}
-          </Link>
+          <LanguageLink locale={locale} className="language" />
           <ThemeToggle />
           <Link className="button small navy" href={`/${locale}/login`}>
             {t.dashboard}
