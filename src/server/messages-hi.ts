@@ -26,6 +26,7 @@ const exact: Record<string, string> = {
   "Choose one of your posts.": "अपना एक पद चुनें।",
   "Only officers can send someone on temporary duty.": "केवल अधिकारी किसी को अस्थायी ड्यूटी पर भेज सकते हैं।",
   "Choose someone in your formation.": "अपनी संरचना में से किसी को चुनें।",
+  "You can send only someone junior to you.": "आप केवल अपने से कनिष्ठ को ही भेज सकते हैं।",
   "For your own temporary duty, choose For myself.": "अपनी अस्थायी ड्यूटी के लिए \"अपने लिए\" चुनें।",
   "Choose a unit, group or directorate under you.": "अपने अधीन की यूनिट, ग्रुप या निदेशालय चुनें।",
   "TD not found.": "टीडी नहीं मिली।",

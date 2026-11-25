@@ -103,6 +103,23 @@ describe("temporary duty", () => {
     // An AO reaches only their unit, not a group officer.
     await expect(send(u.ao, { postId: await postOf(u.two, "group-1") })).rejects.toMatchObject({ status: 403 });
   });
+  it("sends only someone junior: never the DDG the ADG, a DGC the Gp Cdr, an AO the CO", async () => {
+    const adgPost = await postOf(u.adg);
+    await expect(send("admin", { postId: adgPost })).rejects.toMatchObject({ status: 403 });
+    expect((await tdOptions(await as("admin"))).people.map((p) => p.postId)).not.toContain(adgPost);
+    await expect(send(u.dir, { postId: (await db.roleAssignment.findFirstOrThrow({ where: { userId: "admin", appointmentCode: "DDG", active: true } })).id })).rejects.toMatchObject({ status: 403 });
+    await expect(send(u.branch, { postId: await postOf(u.dir) })).rejects.toMatchObject({ status: 403 });
+    await expect(send(u.two, { postId: await postOf("group2") })).rejects.toMatchObject({ status: 403 });
+    await expect(send(u.ao, { postId: await postOf("co") })).rejects.toMatchObject({ status: 403 });
+    await expect(send(u.ao, typedPi)).rejects.toMatchObject({ status: 403 });
+    expect((await tdOptions(await as(u.ao))).canSend).toBe(false);
+    // Down the formations it is allowed: a branch officer sends a Gp Cdr.
+    expect((await send(u.branch, { postId: await postOf("group") })).status).toBe("PENDING");
+    const branch = await tdOptions(await as(u.branch));
+    expect(branch.people.map((p) => p.postId)).not.toContain(await postOf(u.dir));
+    expect(branch.formations.DIRECTORATE).toEqual([]);
+    expect(branch.formations.UNIT.map((f) => f.id)).toContain("unit-1");
+  });
   it("the traveller is notified and sees the TD", async () => {
     const td = await send("group", { postId: await postOf(u.trav) });
     const notices = await tdNotices(await as(u.trav));

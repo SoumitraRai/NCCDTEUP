@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Assignment } from "../src/server/authorization";
 import { istDate } from "../src/modules/platform/training-year";
-import { checkNotice, tdHalfDays, tdStartIndex } from "../src/modules/movement/rules";
+import { canSend, checkNotice, tdHalfDays, tdStartIndex } from "../src/modules/movement/rules";
 // TD day count, notice and where the chain starts. Day count and notice are
 // development defaults, not NCC policy.
 const post = (appointmentCode: string, level: string, role: string, capabilities: string[] = []): Assignment => ({
@@ -56,5 +56,33 @@ describe("where the chain starts", () => {
     expect(tdStartIndex([AD_ADM], [AD_ADM], "DIRECTORATE")).toBe(1);
     expect(tdStartIndex([GP_CDR], [], "UNIT")).toBe(1);
     expect(tdStartIndex([AO, DIR], [], "UNIT")).toBe(3);
+  });
+});
+describe("who may send whom", () => {
+  const CO = post("CO", "UNIT", "CO");
+  const GP_TRG = post("GP_TRG", "GROUP", "GROUP_STAFF");
+  const typed = (level: string): Assignment => ({ ...post("", level, ""), appointmentCode: null });
+  it("in the directorate: ADG anyone, DDG all but the ADG, Director all but ADG and DDG", () => {
+    for (const t of [DDG, DIR, BRANCH, AD_ADM, GP_CDR, CO]) expect(canSend(ADG, t)).toBe(true);
+    expect(canSend(DDG, ADG)).toBe(false);
+    for (const t of [DIR, BRANCH, GP_CDR]) expect(canSend(DDG, t)).toBe(true);
+    expect([canSend(DIR, ADG), canSend(DIR, DDG)]).toEqual([false, false]);
+    expect([canSend(DIR, AD_ADM), canSend(DIR, BRANCH), canSend(DIR, GP_CDR)]).toEqual([true, true, true]);
+  });
+  it("other officers send only into a lower formation, never each other or upwards", () => {
+    for (const t of [ADG, DDG, DIR, BRANCH]) expect(canSend(AD_ADM, t)).toBe(false);
+    expect(canSend(BRANCH, AD_ADM)).toBe(false);
+    expect([canSend(AD_ADM, GP_CDR), canSend(BRANCH, CO), canSend(AD_ADM, typed("UNIT"))]).toEqual([true, true, true]);
+    expect(canSend(AD_ADM, typed("DIRECTORATE"))).toBe(false);
+  });
+  it("the same in a group and a unit", () => {
+    for (const t of [DGC, GP_TRG, CO, AO]) expect(canSend(GP_CDR, t)).toBe(true);
+    expect([canSend(DGC, GP_CDR), canSend(DGC, GP_TRG), canSend(DGC, CO)]).toEqual([false, true, true]);
+    expect([canSend(GP_TRG, DGC), canSend(GP_TRG, GP_CDR), canSend(GP_TRG, CO)]).toEqual([false, false, true]);
+    expect([canSend(CO, AO), canSend(CO, typed("UNIT")), canSend(AO, CO), canSend(AO, typed("UNIT"))]).toEqual([true, true, false, false]);
+  });
+  it("never upwards or outside the formation", () => {
+    expect(canSend(CO, GP_CDR)).toBe(false);
+    expect(canSend(GP_CDR, { ...CO, anchor: { ...CO.anchor, unitId: "unit-9", groupId: "group-9" } })).toBe(false);
   });
 });

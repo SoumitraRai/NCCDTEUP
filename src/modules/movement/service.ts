@@ -7,7 +7,7 @@ import { awaiting, cancelRequest, decide, openRequest, pendingWhere, timeline, t
 import { chainOf } from "@/modules/identity/officer-registration";
 import { page, terms, type ListQuery } from "@/modules/platform/query";
 import { istDate, resolveTrainingYear } from "@/modules/platform/training-year";
-import { checkNotice, tdHalfDays, tdStartIndex, type Half } from "./rules";
+import { canSend, checkNotice, tdHalfDays, tdStartIndex, within, type Half } from "./rules";
 type Tx = Prisma.TransactionClient;
 // Officer roles may send someone on TD; ANOs, CTOs and cadets may not.
 const OFFICER_ROLES = ["CO", "GROUP", "GROUP_STAFF", "ADMIN", "DTE_STAFF"];
@@ -16,10 +16,10 @@ const officerPosts = (actor: Actor) => actor.assignments.filter((a) => OFFICER_R
 // The formation key an officer role reaches down from.
 const reachKey = (role: string) =>
   role === "ADMIN" || role === "DTE_STAFF" ? "directorateId" : role === "GROUP" || role === "GROUP_STAFF" ? "groupId" : role === "CO" ? "unitId" : null;
-const reaches = (a: Assignment, chain: Chain) => {
-  const k = reachKey(a.role);
-  return !!k && !!a.anchor[k] && a.anchor[k] === chain[k];
-};
+// A sender post may send someone only if it may send every post they hold
+// within its formation (so another post does not hide a senior one).
+const canSendPost = (senders: Assignment[], post: Assignment, all: Assignment[]) =>
+  senders.some((s) => canSend(s, post) && all.every((p) => !within(s, p) || canSend(s, p)));
 // Who sees a TD: its creator, its traveller, and officers whose post covers
 // the traveller's formation.
 export function tdScope(actor: Actor): Prisma.TdRequestWhereInput {
@@ -124,12 +124,14 @@ async function travellerOf(actor: Actor, input: z.infer<typeof createInput>) {
     if (!post) throw new AppError(403, "Choose someone in your formation.");
     if (post.userId === actor.id) throw new AppError(400, "For your own temporary duty, choose For myself.");
     const a = toAssignment(post);
-    return { id: post.userId, name: post.user.name, rank: "", post: post.appointment?.title ?? "", level: post.level, anchor: a.anchor, assignments: (await actorById(post.userId)).assignments };
+    const assignments = (await actorById(post.userId)).assignments;
+    if (!canSendPost(senders, a, assignments)) throw new AppError(403, "You can send only someone junior to you.");
+    return { id: post.userId, name: post.user.name, rank: "", post: post.appointment?.title ?? "", level: post.level, anchor: a.anchor, assignments };
   }
   const { level, id } = t.formation;
   const found = level === "DIRECTORATE" ? await db.directorate.findUnique({ where: { id } }).then((d) => d && { unitId: null, groupId: null, directorateId: d.id }) : await chainOf({ level, unitId: level === "UNIT" ? id : null, groupId: level === "GROUP" ? id : null, directorateId: null });
   const chain = found && { level, institutionId: null, ...found };
-  if (!chain || !senders.some((a) => reaches(a, chain))) throw new AppError(403, "Choose a unit, group or directorate under you.");
+  if (!chain || !senders.some((a) => canSend(a, { level, appointmentCode: null, anchor: { institutionId: null, ...found } }))) throw new AppError(403, "Choose a unit, group or directorate under you.");
   return { id: null, name: t.name, rank: t.rank, post: "", level, anchor: { institutionId: null, ...found }, assignments: [] as Assignment[] };
 }
 export async function createTd(actor: Actor, raw: unknown) {
@@ -356,7 +358,7 @@ export async function tdOptions(actor: Actor) {
     senders.length
       ? db.roleAssignment.findMany({
           where: { AND: [live, { userId: { not: actor.id }, user: { active: true } }, assignmentsWithin({ ...actor, assignments: senders }, "read")] },
-          include: { ...postInclude, user: { select: { name: true } } },
+          include: { ...postInclude, ...assignmentInclude, user: { select: { name: true, assignments: { where: live, include: assignmentInclude } } } },
           orderBy: { user: { name: "asc" } },
           take: 300,
         })
@@ -364,16 +366,23 @@ export async function tdOptions(actor: Actor) {
   ]);
   const keys = (k: "unitId" | "groupId" | "directorateId") => senders.filter((a) => reachKey(a.role) === k).map((a) => a.anchor[k]!).filter(Boolean);
   const [dtes, groups, units] = [keys("directorateId"), keys("groupId"), keys("unitId")];
-  const named = { select: { id: true, name: true }, orderBy: { name: "asc" as const } };
-  const [UNIT, GROUP, DIRECTORATE] = await Promise.all([
-    db.unit.findMany({ where: { OR: [{ id: { in: units } }, { groupId: { in: groups } }, { group: { directorateId: { in: dtes } } }] }, ...named }),
-    db.group.findMany({ where: { OR: [{ id: { in: groups } }, { directorateId: { in: dtes } }] }, ...named }),
-    db.directorate.findMany({ where: { id: { in: dtes } }, ...named }),
+  const named = { orderBy: { name: "asc" as const } };
+  const [unitRows, groupRows, dteRows] = await Promise.all([
+    db.unit.findMany({ where: { OR: [{ id: { in: units } }, { groupId: { in: groups } }, { group: { directorateId: { in: dtes } } }] }, select: { id: true, name: true, groupId: true, group: { select: { directorateId: true } } }, ...named }),
+    db.group.findMany({ where: { OR: [{ id: { in: groups } }, { directorateId: { in: dtes } }] }, select: { id: true, name: true, directorateId: true }, ...named }),
+    db.directorate.findMany({ where: { id: { in: dtes } }, select: { id: true, name: true }, ...named }),
   ]);
+  // Formations where the actor may send a typed-in traveller.
+  const typed = (level: string, anchor: Assignment["anchor"]) => senders.some((s) => canSend(s, { level, appointmentCode: null, anchor }));
+  const none = { institutionId: null, unitId: null, groupId: null };
+  const UNIT = unitRows.filter((u) => typed("UNIT", { ...none, unitId: u.id, groupId: u.groupId, directorateId: u.group.directorateId })).map(({ id, name }) => ({ id, name }));
+  const GROUP = groupRows.filter((g) => typed("GROUP", { ...none, groupId: g.id, directorateId: g.directorateId })).map(({ id, name }) => ({ id, name }));
+  const DIRECTORATE = dteRows.filter((d) => typed("DIRECTORATE", { ...none, directorateId: d.id }));
+  const sendable = people.filter((p) => canSendPost(senders, toAssignment(p), p.user.assignments.map(toAssignment)));
   return {
     ownPosts: own.map((p) => ({ id: p.id, title: p.appointment?.title ?? "", formation: formation(p), level: p.level })),
-    people: people.map((p) => ({ postId: p.id, name: p.user.name, post: p.appointment?.title ?? "", formation: formation(p) })),
+    people: sendable.map((p) => ({ postId: p.id, name: p.user.name, post: p.appointment?.title ?? "", formation: formation(p) })),
     formations: { UNIT, GROUP, DIRECTORATE },
-    canSend: senders.length > 0,
+    canSend: sendable.length > 0 || UNIT.length + GROUP.length + DIRECTORATE.length > 0,
   };
 }
