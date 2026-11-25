@@ -414,27 +414,43 @@ test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the direct
   await axe(ddg);
   await ddg.getByRole("link", { name: "English" }).click();
   await expect(ddg).toHaveURL(/\/en\/dashboard\/camps\?state=UPCOMING$/);
-  // Cadet strength: the CO enters it per college on the Institutions page
-  // (Camps links there); the DDG only reads it.
+  // Cadet strength: the CO enters it per college from that college's Edit
+  // sheet on the Institutions page (Camps links there); the DDG only reads it.
   await co.goto("/en/dashboard/camps?view=strength");
   await co.getByRole("link", { name: "Enter strength" }).first().click();
-  await expect(co).toHaveURL(/\/en\/dashboard\/institutions\?strength=unit-1/);
+  await expect(co).toHaveURL(/\/en\/dashboard\/institutions\?unit=unit-1/);
+  await expect(co.getByText("Only Demo Unit 1")).toBeVisible();
+  const editCentral = async () => {
+    await co.getByRole("link", { name: /^Edit\s+Demo Central College$/ }).click();
+    await expect(co.getByRole("dialog")).toContainText("Cadet strength, Demo Central College");
+  };
+  await editCentral();
   const cell = co.getByLabel("Enrolled JD, Demo Central College");
   const was = await cell.inputValue();
   await cell.fill(String(Number(was) + 7));
-  await co.getByRole("button", { name: "Save strength" }).click();
+  await co.getByRole("button", { name: "Save institution" }).click();
   await expect(co.getByRole("dialog")).toHaveCount(0);
-  await co.getByRole("link", { name: "Enter strength" }).first().click();
+  await editCentral();
   await expect(co.getByLabel("Enrolled JD, Demo Central College")).toHaveValue(String(Number(was) + 7));
   await axe(co);
   await co.getByLabel("Enrolled JD, Demo Central College").fill(was);
-  await co.getByRole("button", { name: "Save strength" }).click();
+  await co.getByRole("button", { name: "Save institution" }).click();
   await expect(co.getByRole("dialog")).toHaveCount(0);
-  await expect(co.getByRole("row", { name: /Demo Central College/ })).toContainText(/\d+/);
+  // The Gp Cdr may edit the college's details but only reads its strength.
+  const grp = await signIn("group", 4);
+  await grp.goto("/en/dashboard/institutions");
+  await grp.getByRole("link", { name: /^Edit\s+Demo Central College$/ }).click();
+  await expect(grp.getByRole("dialog")).toContainText("Entered by the unit's CO or AO.");
+  await expect(grp.getByLabel("Enrolled JD, Demo Central College")).toHaveCount(0);
   await ddg.goto("/en/dashboard/institutions");
-  await ddg.getByRole("link", { name: /^More details\s*,\s*Demo Unit 1$/ }).click();
+  await ddg.getByRole("link", { name: /^Edit\s+Demo Central College$/ }).click();
   await expect(ddg.getByRole("dialog")).toContainText("Entered by the unit's CO or AO.");
-  await expect(ddg.getByRole("button", { name: "Save strength" })).toHaveCount(0);
+  // Directorate staff who cannot edit the college open "More details".
+  const dir = await signIn("dir", 5);
+  await dir.goto("/en/dashboard/institutions");
+  await dir.getByRole("link", { name: /^More details\s+Demo Central College$/ }).click();
+  await expect(dir.getByRole("dialog")).toContainText("Cadet strength, Demo Central College");
+  await axe(dir);
   // Leave the development database as it was.
   const clean = new Client({ connectionString: process.env.DATABASE_URL });
   await clean.connect();

@@ -232,7 +232,7 @@ function Strength({ data, locale }: { data: Awaited<ReturnType<typeof campStreng
                     <td className={num}>{u.attended}</td>
                     <td className={`${num} ${u.enrolled > u.seats ? "font-medium text-warning" : ""}`}>{Math.max(0, u.enrolled - u.seats)}</td>
                     <td className="px-5 py-2.5 text-right">
-                      <Link href={`/${locale}/dashboard/institutions?strength=${u.id}${data.year ? `&year=${data.year}` : ""}`} className="text-[13.5px] font-medium text-primary hover:underline">
+                      <Link href={`/${locale}/dashboard/institutions?unit=${u.id}${data.year ? `&year=${data.year}` : ""}`} className="text-[13.5px] font-medium text-primary hover:underline">
                         {u.canEnter ? t.enterStrength : t.byCollege}<span className="sr-only">, {u.name}</span>
                       </Link>
                     </td>

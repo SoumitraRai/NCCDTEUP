@@ -1,6 +1,7 @@
 // Hindi for messages the server sends back to the dashboard. Keys are the
 // exact English text; anything not listed is returned in English.
 const exact: Record<string, string> = {
+  "Institution not found.": "संस्थान नहीं मिला।",
   "Hold the briefing on or before the first day of the camp.": "ब्रीफ़िंग कैंप के पहले दिन या उससे पहले रखें।",
   "Only the unit's CO or AO can enter its cadet strength.": "केवल यूनिट के CO या AO उसकी कैडेट संख्या भर सकते हैं।",
   "List each institution once.": "हर संस्थान एक ही बार लिखें।",

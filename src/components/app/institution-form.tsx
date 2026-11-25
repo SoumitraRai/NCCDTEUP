@@ -3,10 +3,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Alert, Button, Drawer, Field, api, inputClass, useQueryState } from "./ui";
 import { useT } from "./i18n-client";
+import { StrengthGrid, strengthValues, type Strength } from "./strength-grid";
 type Option = { id: string; name: string };
 export type InstitutionDraft = { id: string; version: number; name: string; district: string; unitId: string; latitude: number | null; longitude: number | null };
-// Adds an institution, or edits one with its version so concurrent edits are caught.
-export function InstitutionForm({ units, institution }: { units: Option[]; institution?: InstitutionDraft }) {
+// Adds an institution, or edits one with its version so concurrent edits are
+// caught. Editing also shows its cadet strength, which only the unit's CO or
+// AO may change; each part is saved only if it changed.
+export function InstitutionForm({ units, institution, strength }: { units: Option[]; institution?: InstitutionDraft; strength?: Strength }) {
   const router = useRouter();
   const { set } = useQueryState();
   const t = useT();
@@ -18,6 +21,8 @@ export function InstitutionForm({ units, institution }: { units: Option[]; insti
     latitude: institution?.latitude?.toString() ?? "",
     longitude: institution?.longitude?.toString() ?? "",
   });
+  const original = strength && strengthValues(strength);
+  const [cadets, setCadets] = useState(original);
   const [busy, setBusy] = useState<"" | "save" | "deactivate">("");
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState("");
@@ -40,8 +45,13 @@ export function InstitutionForm({ units, institution }: { units: Option[]; insti
         latitude: num(v.latitude, T.latitude),
         longitude: num(v.longitude, T.longitude),
       };
-      if (institution) await api(`institutions/${institution.id}`, "PATCH", { ...body, version: institution.version });
-      else await api("institutions", "POST", body);
+      if (!institution) await api("institutions", "POST", body);
+      else {
+        const before = { name: institution.name, district: institution.district, unitId: institution.unitId, latitude: institution.latitude, longitude: institution.longitude };
+        if (JSON.stringify(before) !== JSON.stringify(body)) await api(`institutions/${institution.id}`, "PATCH", { ...body, version: institution.version });
+        if (strength?.canEdit && cadets && JSON.stringify(cadets) !== JSON.stringify(original))
+          await api(`camps/strength/${strength.unit.id}`, "PUT", { year: strength.year, rows: [{ institutionId: strength.id, version: strength.version, ...cadets }] });
+      }
       set({ new: null, edit: null });
       router.refresh();
     } catch (e) {
@@ -104,6 +114,7 @@ export function InstitutionForm({ units, institution }: { units: Option[]; insti
           </div>
           <p className="mt-2 text-xs text-muted">{T.locationHint}</p>
         </fieldset>
+        {strength && cadets && <StrengthGrid name={strength.name} year={strength.year} values={cadets} onChange={strength.canEdit ? setCadets : undefined} />}
       </form>
     </Drawer>
   );
