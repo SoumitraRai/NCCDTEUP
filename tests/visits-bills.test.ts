@@ -174,9 +174,9 @@ describe("visits and institutions", () => {
     expect(e.noVisit.map((u) => u.id)).toEqual(expect.arrayContaining(["unit-1"]));
   });
   it("only unit staff above ANO can add institutions; coordinates are coarse", async () => {
-    await expect(createInstitution(actors.ano, { name: "Test School", district: "Lucknow", unitId: "unit-1", vacancy: 10 })).rejects.toThrow("Not permitted");
-    await expect(createInstitution(actors.co2, { name: "Test School", district: "Lucknow", unitId: "unit-1", vacancy: 10 })).rejects.toThrow("Not permitted");
-    const i = await createInstitution(actors.co, { name: "Test School", district: "Lucknow", unitId: "unit-1", vacancy: 10, latitude: 26.84712, longitude: 80.94661 });
+    await expect(createInstitution(actors.ano, { name: "Test School", district: "Lucknow", unitId: "unit-1" })).rejects.toThrow("Not permitted");
+    await expect(createInstitution(actors.co2, { name: "Test School", district: "Lucknow", unitId: "unit-1" })).rejects.toThrow("Not permitted");
+    const i = await createInstitution(actors.co, { name: "Test School", district: "Lucknow", unitId: "unit-1", latitude: 26.84712, longitude: 80.94661 });
     institutionIds.push(i.id);
     expect(i.latitude?.toNumber()).toBe(26.847);
   });
@@ -187,13 +187,13 @@ describe("visits and institutions", () => {
     expect(await editableUnits(actors.cadet)).toEqual([]);
   });
   it("edits with a version check and deactivates without deleting", async () => {
-    const base = { name: "Test Edit School", district: "Lucknow", unitId: "unit-1", vacancy: 10 };
+    const base = { name: "Test Edit School", district: "Lucknow", unitId: "unit-1" };
     const i = await createInstitution(actors.co, base);
     institutionIds.push(i.id);
     await expect(updateInstitution(actors.co2, i.id, { ...base, version: 1 })).rejects.toThrow("Not permitted");
     await expect(updateInstitution(actors.co, i.id, { ...base, unitId: "unit-2", version: 1 })).rejects.toThrow("Not permitted");
-    const u = await updateInstitution(actors.co, i.id, { ...base, vacancy: 40, version: 1 });
-    await expect(updateInstitution(actors.co, i.id, { ...base, vacancy: 50, version: 1 })).rejects.toThrow("changed");
+    const u = await updateInstitution(actors.co, i.id, { ...base, district: "Lucknow North", version: 1 });
+    await expect(updateInstitution(actors.co, i.id, { ...base, district: "Lucknow South", version: 1 })).rejects.toThrow("changed");
     await deactivateInstitution(actors.co, i.id, { version: u.version });
     const list = await listInstitutions(actors.co, parseList({ q: "Test Edit School" }));
     expect(list.rows.some((r) => r.id === i.id)).toBe(false);

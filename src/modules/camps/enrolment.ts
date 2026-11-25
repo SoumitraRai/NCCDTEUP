@@ -91,3 +91,15 @@ export async function unitTotals(actor: Actor, unitIds: string[], yearLabel: str
   }
   return (unitId: string) => by.get(unitId) ?? { authorised: zero(), enrolled: zero() };
 }
+// Units whose strength this actor sees (with readable institutions) or
+// enters, for the Institutions page.
+export async function strengthUnits(actor: Actor) {
+  const units = await db.unit.findMany({
+    where: { institutions: { some: { AND: [readable(actor), { active: true }] } } },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const own = actor.assignments.filter((a) => a.role === "CO" && a.level === "UNIT" && a.anchor.unitId).map((a) => a.anchor.unitId!);
+  const extra = own.length ? await db.unit.findMany({ where: { id: { in: own.filter((id) => !units.some((u) => u.id === id)) } }, select: { id: true, name: true } }) : [];
+  return [...units, ...extra].map((u) => ({ ...u, canEdit: entersFor(actor, u.id) }));
+}

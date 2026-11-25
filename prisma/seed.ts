@@ -33,9 +33,9 @@ const subjectNames=['NCC organisation and aims','Drill: foot drill basics','Dril
 for(const name of subjectNames)await db.subject.upsert({where:{name},create:{name},update:{}});
 // Extra synthetic institutions with coarse (3 dp) coordinates.
 const extra=[['institution-1b','Demo Gomti Inter College','Lucknow','unit-1',120,26.871,80.951],['institution-1c','Demo Charbagh Girls School','Lucknow','unit-1',80,26.832,80.922],['institution-2b','Demo Ganga Degree College','Varanasi','unit-2',150,25.318,83.004],['institution-2c','Demo Sarnath Public School','Varanasi','unit-2',60,25.381,83.022]] as const;
-for(const [id,name,district,unitId,vacancy,latitude,longitude] of extra)await db.institution.upsert({where:{id},create:{id,name,district,unitId,vacancy,latitude,longitude,publicApproved:false},update:{}});
-await db.institution.update({where:{id:'institution-1'},data:{vacancy:100,latitude:26.847,longitude:80.946}});
-await db.institution.update({where:{id:'institution-2'},data:{vacancy:90,latitude:25.317,longitude:82.974}});
+for(const [id,name,district,unitId,,latitude,longitude] of extra)await db.institution.upsert({where:{id},create:{id,name,district,unitId,latitude,longitude,publicApproved:false},update:{}});
+await db.institution.update({where:{id:'institution-1'},data:{latitude:26.847,longitude:80.946}});
+await db.institution.update({where:{id:'institution-2'},data:{latitude:25.317,longitude:82.974}});
 if(!await db.visit.count({where:{purpose:'Synthetic training visit for development'}})){
   const subjects=await db.subject.findMany();
   const visits=[['institution-1','2026-07-14','PI','Demo Havildar A','Hav',3,42],['institution-1b','2026-08-05','ANO','Demo Officer B','Lt',2,35],['institution-1','2026-09-18','CO','Demo Colonel C','Col',1,60],['institution-2','2026-08-21','ANO','Demo Officer D','2nd Offr',3,28],['institution-2b','2026-10-03','PI','Demo Havildar E','Hav',4,51]] as const;

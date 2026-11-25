@@ -212,7 +212,6 @@ export const institutionInput = z
     name: z.string().trim().min(3, "Enter the institution's name.").max(160, "Keep the name under 160 characters."),
     district: z.string().trim().min(2, "Enter the district.").max(80, "Keep the district under 80 characters."),
     unitId: z.string().min(1, "Choose a unit."),
-    vacancy: z.number({ error: "Enter the vacancy as a number." }).int("Enter the vacancy as a whole number.").min(0, "The vacancy cannot be negative.").max(5000, "The vacancy can be at most 5,000."),
     latitude: coord("latitude", 6, 38).nullable().default(null),
     longitude: coord("longitude", 68, 98).nullable().default(null),
   })
@@ -232,7 +231,8 @@ export async function listInstitutions(actor: Actor, q: ListQuery) {
     db.institution.findMany({
       where,
       select: {
-        id: true, name: true, district: true, vacancy: true, latitude: true, longitude: true, version: true,
+        id: true, name: true, district: true, latitude: true, longitude: true, version: true,
+        strengths: { where: { trainingYear: year.label } },
         unit: { select: { id: true, name: true, group: { select: { name: true } } } },
         _count: { select: { visits: { where: { status: "SUBMITTED", startsAt: yearRange(year) } } } },
       },
@@ -243,7 +243,19 @@ export async function listInstitutions(actor: Actor, q: ListQuery) {
     db.institution.count({ where }),
   ]);
   return {
-    ...page(rows.map(({ _count, latitude, longitude, ...r }) => ({ ...r, latitude: latitude?.toNumber() ?? null, longitude: longitude?.toNumber() ?? null, visits: _count.visits })), total, q),
+    ...page(
+      rows.map(({ _count, latitude, longitude, strengths: [st], ...r }) => ({
+        ...r,
+        latitude: latitude?.toNumber() ?? null,
+        longitude: longitude?.toNumber() ?? null,
+        visits: _count.visits,
+        // Cadet strength for the year, entered by the unit (null until then).
+        authorised: st ? st.authJD + st.authJW + st.authSD + st.authSW : null,
+        enrolled: st ? st.enrJD + st.enrJW + st.enrSD + st.enrSW : null,
+      })),
+      total,
+      q,
+    ),
     year: year.label,
   };
 }

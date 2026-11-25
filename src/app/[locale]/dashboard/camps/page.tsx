@@ -10,8 +10,6 @@ import { day } from "@/components/app/format";
 import { ButtonLink, ListControls, OpenLink, OpenRow } from "@/components/app/ui";
 import { CampForm } from "@/components/app/camp-form";
 import { CampDetail, campDates } from "@/components/app/camp-detail";
-import { StrengthForm } from "@/components/app/strength-form";
-import { unitStrength } from "@/modules/camps/enrolment";
 const VIEWS = ["timeline", "strength", "reports"] as const;
 const QUEUES = ["OVERDUE", "DUE", "SUBMITTED", "RETURNED", "ACCEPTED"] as const;
 const STATES = ["UPCOMING", "CURRENT", "COMPLETED", "CANCELLED"] as const;
@@ -33,7 +31,6 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
   const [list, strength, options] = await Promise.all([listCamps(actor, filter), campStrength(actor, { year: sp.year, group: sp.group }), campOptions(actor)]);
   const queue = QUEUES.find((q) => q === sp.report) ?? QUEUES.find((q) => list.reports[q] > 0) ?? "OVERDUE";
   const open = sp.open ? await getCamp(actor, sp.open).catch(() => null) : null;
-  const unitOpen = sp.strength ? await unitStrength(actor, sp.strength, sp.year).catch(() => null) : null;
   const href = (updates: Record<string, string | null>) => {
     const next = new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => !!e[1]));
     for (const [k, v] of Object.entries(updates)) if (v) next.set(k, v); else next.delete(k);
@@ -103,7 +100,6 @@ export default async function Camps({ params, searchParams }: PageProps<"/[local
           <Reports camps={list.camps.filter((c) => c.report === queue)} today={list.today} locale={locale} />
         </>
       )}
-      {unitOpen && <StrengthForm key={unitOpen.unit.id} data={unitOpen} />}
       {sp.new && options.canPlan && <CampForm options={options} />}
       {open && sp.edit && open.canEdit ? (
         <CampForm key={open.id} options={options} edit={{ id: open.id, version: open.version, unitId: open.unit.id, catcNo: open.catcNo, location: open.location, start: open.start, end: open.end, plannedStrength: open.plannedStrength, briefing: open.briefing ?? "", details: open.details, seats: open.seats }} />
@@ -236,7 +232,9 @@ function Strength({ data, locale }: { data: Awaited<ReturnType<typeof campStreng
                     <td className={num}>{u.attended}</td>
                     <td className={`${num} ${u.enrolled > u.seats ? "font-medium text-warning" : ""}`}>{Math.max(0, u.enrolled - u.seats)}</td>
                     <td className="px-5 py-2.5 text-right">
-                      <ButtonLink query={{ strength: u.id, open: null }} variant={u.canEnter ? "primary" : "ghost"}>{u.canEnter ? t.enterStrength : t.byCollege}</ButtonLink>
+                      <Link href={`/${locale}/dashboard/institutions?strength=${u.id}${data.year ? `&year=${data.year}` : ""}`} className="text-[13.5px] font-medium text-primary hover:underline">
+                        {u.canEnter ? t.enterStrength : t.byCollege}<span className="sr-only">, {u.name}</span>
+                      </Link>
                     </td>
                   </tr>
                 ))}

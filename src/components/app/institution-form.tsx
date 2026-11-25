@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Alert, Button, Drawer, Field, api, inputClass, useQueryState } from "./ui";
 import { useT } from "./i18n-client";
 type Option = { id: string; name: string };
-export type InstitutionDraft = { id: string; version: number; name: string; district: string; unitId: string; vacancy: number; latitude: number | null; longitude: number | null };
+export type InstitutionDraft = { id: string; version: number; name: string; district: string; unitId: string; latitude: number | null; longitude: number | null };
 // Adds an institution, or edits one with its version so concurrent edits are caught.
 export function InstitutionForm({ units, institution }: { units: Option[]; institution?: InstitutionDraft }) {
   const router = useRouter();
@@ -15,7 +15,6 @@ export function InstitutionForm({ units, institution }: { units: Option[]; insti
     name: institution?.name ?? "",
     district: institution?.district ?? "",
     unitId: institution?.unitId ?? units[0]?.id ?? "",
-    vacancy: String(institution?.vacancy ?? 0),
     latitude: institution?.latitude?.toString() ?? "",
     longitude: institution?.longitude?.toString() ?? "",
   });
@@ -38,7 +37,6 @@ export function InstitutionForm({ units, institution }: { units: Option[]; insti
         name: v.name,
         district: v.district,
         unitId: v.unitId,
-        vacancy: num(v.vacancy, T.vacancyLabel) ?? 0,
         latitude: num(v.latitude, T.latitude),
         longitude: num(v.longitude, T.longitude),
       };
@@ -98,9 +96,6 @@ export function InstitutionForm({ units, institution }: { units: Option[]; insti
             </select>
           </Field>
         </div>
-        <Field label={T.vacancyLabel} hint={T.vacancyHint}>
-          <input inputMode="numeric" className={inputClass} value={v.vacancy} onChange={(e) => upd("vacancy", e.target.value.replace(/\D/g, ""))} />
-        </Field>
         <fieldset>
           <legend className="mb-2 text-[13px] font-medium">{T.location}</legend>
           <div className="grid grid-cols-2 gap-3">

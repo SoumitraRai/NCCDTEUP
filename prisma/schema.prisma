@@ -106,7 +106,6 @@ model Institution {
   publicApproved Boolean @default(false)
   unitId String
   unit Unit @relation(fields:[unitId],references:[id])
-  vacancy Int @default(0)
   latitude Decimal? @db.Decimal(6,3)
   longitude Decimal? @db.Decimal(6,3)
   active Boolean @default(true)

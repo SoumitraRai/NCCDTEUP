@@ -61,12 +61,12 @@ export default async function DashboardLayout({ children, params }: LayoutProps<
     ...(cadet
       ? []
       : [
-          { href: `${base}/institutions`, label: t.institutions, icon: "institutions" as const, section: t.sectionVisits },
           { href: `${base}/bills/refreshment`, label: t.refreshment, icon: "refreshment" as const, section: t.sectionVisits },
           { href: `${base}/bills/honorarium`, label: t.honorarium, icon: "honorarium" as const, section: t.sectionVisits },
         ]),
     ...(officer ? [{ href: `${base}/movement/td`, label: t.movement, icon: "movement" as const, count: tdUnread.length + tdWaiting.length, section: t.sectionMovement }] : []),
     ...(cadet ? [] : [{ href: `${base}/camps`, label: t.camps, icon: "camps" as const, section: t.sectionCamps }]),
+    ...(cadet ? [] : [{ href: `${base}/institutions`, label: t.institutions, icon: "institutions" as const, section: t.sectionColleges }]),
     ...(officer ? [{ href: `${base}/officers`, label: t.officers, icon: "officers" as const, section: t.sectionPeople }] : []),
     ...(reviewer(roles) || approvesOfficers ? [{ href: `${base}/registrations`, label: t.registrations, icon: "registrations" as const, count: waiting, section: t.sectionPeople }] : []),
     ...(roles.includes("ADMIN") ? [{ href: `${base}/posts`, label: t.posts, icon: "posts" as const, section: t.sectionPeople }] : []),

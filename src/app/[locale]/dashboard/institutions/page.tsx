@@ -8,6 +8,8 @@ import { Plus } from "lucide-react";
 import { ButtonLink, ListControls, Pager } from "@/components/app/ui";
 import { InstitutionForm } from "@/components/app/institution-form";
 import { dict } from "@/components/app/i18n";
+import { StrengthForm } from "@/components/app/strength-form";
+import { strengthUnits, unitStrength } from "@/modules/camps/enrolment";
 export async function generateMetadata({ params }: PageProps<"/[locale]/dashboard/institutions">) {
   return { title: dict((await params).locale).institutions.title };
 }
@@ -19,7 +21,8 @@ export default async function Institutions({ params, searchParams }: PageProps<"
   const t = T.institutions;
   const mapView = sp.view === "map";
   const q = parseList(sp);
-  const [list, units, map] = await Promise.all([listInstitutions(actor, q), editableUnits(actor), mapView ? institutionPoints(actor, q.year) : null]);
+  const [list, units, map, strengthOf] = await Promise.all([listInstitutions(actor, q), editableUnits(actor), mapView ? institutionPoints(actor, q.year) : null, strengthUnits(actor)]);
+  const unitOpen = sp.strength ? await unitStrength(actor, sp.strength, sp.year).catch(() => null) : null;
   // Switching views keeps the training year but drops list-only params.
   const viewHref = (view: string | null) => {
     const next = new URLSearchParams(sp.year ? { year: sp.year } : {});
@@ -53,6 +56,22 @@ export default async function Institutions({ params, searchParams }: PageProps<"
           );
         })}
       </nav>
+      {strengthOf.length > 0 && (
+        <section aria-labelledby="strength" className="rounded-xl border bg-surface px-5 py-4">
+          <h2 id="strength" className="font-semibold">{t.strength}</h2>
+          <p className="mt-0.5 text-[13.5px] text-muted">{t.strengthIntro}</p>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {strengthOf.map((u) => (
+              <li key={u.id} className="flex items-center gap-2 rounded-lg border px-3 py-1.5">
+                <span className="text-[13.5px] font-medium">{u.name}</span>
+                <ButtonLink query={{ strength: u.id, edit: null, new: null }} variant={u.canEdit ? "primary" : "ghost"}>
+                  {u.canEdit ? T.camps.enterStrength : T.camps.byCollege}<span className="sr-only">, {u.name}</span>
+                </ButtonLink>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {map ? (
         <InstitutionMap points={map.points} locale={locale} hrefFor={visitsHref} />
       ) : (
@@ -66,12 +85,13 @@ export default async function Institutions({ params, searchParams }: PageProps<"
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-left">
+            <table className="w-full min-w-[820px] text-left">
               <thead className="bg-surface-2 text-[13px] text-muted">
                 <tr>
                   <th className="px-5 py-2.5 font-medium">{T.common.institution}</th>
                   <th className="px-5 py-2.5 font-medium">{T.common.unit}</th>
-                  <th className="px-5 py-2.5 text-right font-medium">{t.vacancy}</th>
+                  <th className="px-5 py-2.5 text-right font-medium">{t.authorised}</th>
+                  <th className="px-5 py-2.5 text-right font-medium">{t.enrolled}</th>
                   <th className="px-5 py-2.5 text-right font-medium">{t.visitsYear}</th>
                   {canEdit && <th className="w-20 px-5 py-2.5"><span className="sr-only">{t.edit}</span></th>}
                 </tr>
@@ -87,7 +107,8 @@ export default async function Institutions({ params, searchParams }: PageProps<"
                       {i.unit.name}
                       <p className="text-[13px] text-muted">{i.unit.group.name}</p>
                     </td>
-                    <td className="px-5 py-3 text-right">{i.vacancy}</td>
+                    <td className={`px-5 py-3 text-right tabular-nums ${i.authorised === null ? "text-muted" : ""}`}>{i.authorised ?? t.notEntered}</td>
+                    <td className={`px-5 py-3 text-right tabular-nums ${i.enrolled === null ? "text-muted" : ""}`}>{i.enrolled ?? t.notEntered}</td>
                     <td className={`px-5 py-3 text-right ${i.visits ? "" : "text-danger"}`}>{i.visits || t.noneYet}</td>
                     {canEdit && (
                       <td className="px-5 py-3 text-right">
@@ -108,12 +129,13 @@ export default async function Institutions({ params, searchParams }: PageProps<"
       </div>
       </>
       )}
+      {unitOpen && <StrengthForm key={unitOpen.unit.id} data={unitOpen} />}
       {sp.new && canEdit && <InstitutionForm units={units} />}
       {editing && units.some((u) => u.id === editing.unit.id) && (
         <InstitutionForm
           key={`${editing.id}-${editing.version}`}
           units={units}
-          institution={{ id: editing.id, version: editing.version, name: editing.name, district: editing.district, unitId: editing.unit.id, vacancy: editing.vacancy, latitude: editing.latitude, longitude: editing.longitude }}
+          institution={{ id: editing.id, version: editing.version, name: editing.name, district: editing.district, unitId: editing.unit.id, latitude: editing.latitude, longitude: editing.longitude }}
         />
       )}
     </div>

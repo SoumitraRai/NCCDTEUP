@@ -414,9 +414,11 @@ test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the direct
   await axe(ddg);
   await ddg.getByRole("link", { name: "English" }).click();
   await expect(ddg).toHaveURL(/\/en\/dashboard\/camps\?state=UPCOMING$/);
-  // Cadet strength: the CO enters it per college; the DDG only reads it.
+  // Cadet strength: the CO enters it per college on the Institutions page
+  // (Camps links there); the DDG only reads it.
   await co.goto("/en/dashboard/camps?view=strength");
   await co.getByRole("link", { name: "Enter strength" }).first().click();
+  await expect(co).toHaveURL(/\/en\/dashboard\/institutions\?strength=unit-1/);
   const cell = co.getByLabel("Enrolled JD, Demo Central College");
   const was = await cell.inputValue();
   await cell.fill(String(Number(was) + 7));
@@ -428,7 +430,9 @@ test("CO plans a camp, reports after it, Gp Cdr returns then accepts, the direct
   await co.getByLabel("Enrolled JD, Demo Central College").fill(was);
   await co.getByRole("button", { name: "Save strength" }).click();
   await expect(co.getByRole("dialog")).toHaveCount(0);
-  await ddg.goto("/en/dashboard/camps?view=strength&strength=unit-1");
+  await expect(co.getByRole("row", { name: /Demo Central College/ })).toContainText(/\d+/);
+  await ddg.goto("/en/dashboard/institutions");
+  await ddg.getByRole("link", { name: /^More details\s*,\s*Demo Unit 1$/ }).click();
   await expect(ddg.getByRole("dialog")).toContainText("Entered by the unit's CO or AO.");
   await expect(ddg.getByRole("button", { name: "Save strength" })).toHaveCount(0);
   // Leave the development database as it was.
