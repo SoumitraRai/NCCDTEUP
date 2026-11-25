@@ -57,7 +57,7 @@ The DDG or ADG gives or withdraws the `movement` duty for directorate officers o
 
 - **Who plans:** the CO or AO for their own unit; the Gp Cdr or group staff for any unit of their group. Seats go only to units of the host's group. Edit and cancel (with a reason) only before the camp starts, by the officer who planned it or someone senior to them under the TD seniority rule (user decision, 2026-11-25): an AO cannot change the CO's camp, group staff cannot change the Gp Cdr's or DGC's; group officers can change a unit's camp. Versioned and audited.
 - **Who sees:** every directorate post sees every camp, report, report file, attendance figure, remark and history entry, even without a step to act on (user decision, 2026-11-25). Group officers see their group's camps; CO, AO, ANO and CTO see camps their unit hosts or has seats in. Never cadets, never public.
-- **Reports:** after the camp the host unit or its group uploads the report (scanned) and enters attendance for every unit with seats. A group officer senior to the submitter (TD seniority) accepts it or returns it with a remark, never the submitter. A report the Gp Cdr submitted goes to the directorate, since nobody in the group is senior. Each round is an immutable snapshot.
+- **Reports:** after the camp the host unit or its group uploads the report (scanned) and enters attendance for every unit with seats. A group officer senior to the submitter (TD seniority) accepts it or returns it with a remark, never the submitter. A report the Gp Cdr submitted goes to the directorate, since nobody in the group is senior (user decision, 2026-11-25). A report is due 15 days after the camp ends (user decision, 2026-11-25). Each round is an immutable snapshot.
 
 ## DDG and ADG post accounts
 

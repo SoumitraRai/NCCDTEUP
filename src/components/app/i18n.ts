@@ -431,7 +431,7 @@ const en = {
     seatsFor: "Seats for each unit of the group",
     seatsSum: (a: number, p: number) => (a > p ? `${a} seats allocated, more than the planned ${p}` : `${a} of ${p} seats allocated, ${p - a} not allocated`),
     save: "Save plan",
-    defaults: "Report due 15 days after the camp (development default).",
+    defaults: "The report is due 15 days after the camp ends.",
   },
   officers: {
     title: "Officers",
@@ -1000,7 +1000,7 @@ const hi: Dict = {
     seatsFor: "ग्रुप की हर यूनिट के लिए सीटें",
     seatsSum: (a, p) => (a > p ? `${a} सीटें आवंटित, नियोजित ${p} से अधिक` : `${p} में से ${a} सीटें आवंटित, ${p - a} आवंटित नहीं`),
     save: "योजना सहेजें",
-    defaults: "रिपोर्ट कैंप के 15 दिन बाद देय (विकास डिफ़ॉल्ट)।",
+    defaults: "रिपोर्ट कैंप समाप्त होने के 15 दिन बाद देय है।",
   },
   officers: {
     title: "अधिकारी",

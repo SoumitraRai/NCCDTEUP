@@ -1,6 +1,7 @@
 import { AppError } from "@/server/authorization";
 // Camp rules (docs/superpowers/specs/2026-11-25-camps-design.md). The
-// report deadline is a development default, not NCC policy.
+// 15-day report deadline was confirmed by the user (2026-11-25); the 30-day
+// camp limit is still a development default.
 export const CAMP_DEFAULTS = { reportDueDays: 15 } as const;
 const DAY = 86_400_000;
 const utc = (date: string) => Date.parse(`${date}T00:00:00Z`);
