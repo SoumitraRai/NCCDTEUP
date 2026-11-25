@@ -11,6 +11,7 @@ import { listAttachments, uploadIntent } from "../src/server/storage";
 const run = crypto.randomUUID().slice(0, 8);
 const sib = `tcu-${run}`;
 const staff = `tcs-${run}`;
+const bare = `tcb-${run}`;
 const created: string[] = [];
 const DAY = 86_400_000;
 const inDays = (n: number) => new Date(Date.parse(`${istDate()}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
@@ -40,6 +41,7 @@ const fileFor = (id: string, ownerId: string) =>
   db.attachment.create({ data: { ownerId, institutionId: "", resourceType: "camp", resourceId: id, objectKey: `clean/test-${crypto.randomUUID()}`, declaredType: "application/pdf", purpose: "REPORT", size: 10, status: "CLEAN" } });
 beforeAll(async () => {
   await db.unit.create({ data: { id: sib, name: `Unit ${run}`, groupId: "group-1" } });
+  await db.unit.create({ data: { id: bare, name: `Bare unit ${run}`, groupId: "group-2" } });
   await db.user.create({ data: { id: staff, name: staff, email: `${staff}@example.test` } });
   await db.roleAssignment.create({ data: { userId: staff, role: "GROUP_STAFF", appointmentCode: "GP_TRG", level: "GROUP", groupId: "group-1" } });
 });
@@ -49,7 +51,7 @@ afterAll(async () => {
   await db.auditEvent.deleteMany({ where: { resourceId: { in: created } } });
   await db.roleAssignment.deleteMany({ where: { userId: staff } });
   await db.user.deleteMany({ where: { id: staff } });
-  await db.unit.deleteMany({ where: { id: sib } });
+  await db.unit.deleteMany({ where: { id: { in: [sib, bare] } } });
   await db.$disconnect();
 });
 describe("camps", () => {
@@ -94,7 +96,7 @@ describe("camps", () => {
   });
   it("edits and cancels only while upcoming, at the version seen", async () => {
     const c = await make();
-    await updateCamp(await as("ao"), c.id, { ...edit({ location: "New ground" }), version: 1 });
+    await updateCamp(await as("co"), c.id, { ...edit({ location: "New ground" }), version: 1 });
     await expect(updateCamp(await as("co"), c.id, { ...edit(), version: 1 })).rejects.toMatchObject({ status: 409 });
     expect((await getCamp(await as("co"), c.id)).location).toBe("New ground");
     await expect(cancelCamp(await as("co2"), c.id, { reason: "Not ours", version: 2 })).rejects.toMatchObject({ status: 404 });
@@ -104,6 +106,20 @@ describe("camps", () => {
     const past = await make();
     await over(past.id);
     await expect(cancelCamp(await as("co"), past.id, { reason: "Too late", version: 1 })).rejects.toMatchObject({ status: 409 });
+  });
+  it("changes follow TD seniority: the planner or someone senior to them", async () => {
+    const byCo = await make("co");
+    await expect(cancelCamp(await as("ao"), byCo.id, { reason: "AO overrules", version: 1 })).rejects.toThrow("Only the officer who planned this camp or someone senior to them can change it.");
+    expect((await getCamp(await as("ao"), byCo.id)).canEdit).toBe(false);
+    // Group staff are senior to a unit (a lower formation); so is the Gp Cdr.
+    expect((await getCamp(await as(staff), byCo.id)).canEdit).toBe(true);
+    await updateCamp(await as(staff), byCo.id, { ...edit({ location: "Moved by group" }), version: 1 });
+    const byAo = await make("ao");
+    expect((await getCamp(await as("co"), byAo.id)).canEdit).toBe(true);
+    const byGroup = await make("group");
+    await expect(updateCamp(await as(staff), byGroup.id, { ...edit(), version: 1 })).rejects.toMatchObject({ status: 403 });
+    await expect(cancelCamp(await as("co"), byGroup.id, { reason: "CO overrules", version: 1 })).rejects.toMatchObject({ status: 403 });
+    await cancelCamp(await as("group"), byCo.id, { reason: "Gp Cdr decides", version: 2 });
   });
   it("report: is due after the camp, needs a file and attendance for every unit, overdue after 15 days", async () => {
     const c = await make();
@@ -147,7 +163,6 @@ describe("camps", () => {
         expect(await listAttachments(await as(id), "camp", c.id, "")).toHaveLength(1);
         expect((await listCamps(await as(id), { report: "ACCEPTED" })).camps.map((x) => x.id)).toContain(c.id);
       }
-      await expect(decideReport(await as(dir), c.id, { decision: "RETURN", remarks: "Looks wrong", version: 5 })).rejects.toMatchObject({ status: 403 });
     } finally {
       await db.roleAssignment.deleteMany({ where: { userId: dir } });
       await db.user.deleteMany({ where: { id: dir } });
@@ -157,6 +172,19 @@ describe("camps", () => {
     await fileFor(own.id, "group");
     await submitReport(await as("group"), own.id, { attendance: [{ unitId: sib, attended: 9 }], version: 1 });
     await expect(decideReport(await as("group"), own.id, { decision: "ACCEPT", version: 2 })).rejects.toThrow("You cannot review a report you submitted.");
+    // Nobody in the group is senior to the Gp Cdr: the directorate reviews it.
+    await expect(decideReport(await as(staff), own.id, { decision: "RETURN", remarks: "Staff overrules", version: 2 })).rejects.toThrow("Only an officer senior to the one who submitted the report can review it.");
+    expect((await getCamp(await as(staff), own.id)).canReview).toBe(false);
+    expect((await getCamp(await as("admin"), own.id)).canReview).toBe(true);
+    await decideReport(await as("admin"), own.id, { decision: "ACCEPT", version: 2 });
+    // A report by group staff goes to the Gp Cdr, not another staff peer.
+    const byStaff = await make(staff, { unitId: sib, seats: [{ unitId: sib, seats: 10 }] });
+    await over(byStaff.id);
+    await fileFor(byStaff.id, staff);
+    await submitReport(await as(staff), byStaff.id, { attendance: [{ unitId: sib, attended: 8 }], version: 1 });
+    expect((await getCamp(await as("admin"), byStaff.id)).canReview).toBe(false);
+    expect((await getCamp(await as("group"), byStaff.id)).canReview).toBe(true);
+    await expect(decideReport(await as("admin"), byStaff.id, { decision: "RETURN", remarks: "Directorate overrules", version: 2 })).rejects.toMatchObject({ status: 403 });
   });
   it("strength: seats and attendance per unit, units with no seats flagged", async () => {
     const s = await campStrength(await as("group"));
@@ -166,7 +194,7 @@ describe("camps", () => {
     expect(unit1.hosted).toBeGreaterThan(0);
     expect(s.groups.map((g) => g.id)).toEqual(["group-1"]);
     expect((await campStrength(await as("admin"))).groups.map((g) => g.id)).toEqual(expect.arrayContaining(["group-1", "group-2"]));
-    expect((await campStrength(await as("admin"))).groups.find((g) => g.id === "group-2")!.totals.without).toBeGreaterThanOrEqual(1);
+    expect((await campStrength(await as("admin"))).groups.find((g) => g.id === "group-2")!.units.find((u) => u.id === bare)).toMatchObject({ camps: 0, seats: 0 });
     expect((await campStrength(await as("cadet"))).groups).toEqual([]);
   });
 });

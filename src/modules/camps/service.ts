@@ -1,10 +1,11 @@
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/server/db";
-import { AppError, type Actor, type Assignment } from "@/server/authorization";
+import { AppError, actorById, type Actor, type Assignment } from "@/server/authorization";
 import { audit } from "@/modules/audit";
 import { terms } from "@/modules/platform/query";
 import { istDate, resolveTrainingYear } from "@/modules/platform/training-year";
+import { canSend } from "@/modules/movement/rules";
 import { campDays, campState, checkPlan, reportDueDate, reportState, type CampState, type ReportState } from "./rules";
 // Camps (docs/superpowers/specs/2026-11-25-camps-design.md).
 type Tx = Prisma.TransactionClient;
@@ -31,7 +32,32 @@ const unitPost = (a: Assignment) => a.role === "CO" && a.level === "UNIT" && !!a
 const groupPost = (a: Assignment) => GROUP_ROLES.includes(a.role) && a.level === "GROUP" && !!a.anchor.groupId;
 const handles = (actor: Actor, camp: { unitId: string; groupId: string }) =>
   actor.assignments.some((a) => (unitPost(a) && a.anchor.unitId === camp.unitId) || (groupPost(a) && a.anchor.groupId === camp.groupId));
-const reviews = (actor: Actor, camp: { groupId: string }) => actor.assignments.some((a) => groupPost(a) && a.anchor.groupId === camp.groupId);
+// Seniority is the TD rule (user, 2026-11-25): one may overrule, change or
+// review another's work on a camp only if one outranks them (movement/rules
+// canSend). `posts` are the other person's live posts tied to this camp.
+const campPosts = async (userId: string, camp: { unitId: string; groupId: string }) =>
+  (await actorById(userId).catch(() => ({ assignments: [] as Assignment[] }))).assignments.filter(
+    (a) => (unitPost(a) && a.anchor.unitId === camp.unitId) || (groupPost(a) && a.anchor.groupId === camp.groupId),
+  );
+const outranks = (mine: Assignment[], theirs: Assignment[]) => mine.some((s) => theirs.every((p) => canSend(s, p)));
+// Edit and cancel: the planner, or a host-unit or group officer senior to
+// them. If the planner no longer holds a post here, any host or group officer.
+async function changes(actor: Actor, camp: { unitId: string; groupId: string; createdById: string }) {
+  if (!handles(actor, camp)) return false;
+  if (camp.createdById === actor.id) return true;
+  const theirs = await campPosts(camp.createdById, camp);
+  return !theirs.length || outranks(actor.assignments.filter((a) => (unitPost(a) && a.anchor.unitId === camp.unitId) || (groupPost(a) && a.anchor.groupId === camp.groupId)), theirs);
+}
+// Review: an officer senior to the submitter, never the submitter. Group
+// officers review; a report the Gp Cdr submitted (nobody in the group is
+// senior) goes to the directorate. A submitter who left: any group officer.
+async function reviews(actor: Actor, camp: { unitId: string; groupId: string; directorateId: string }, submitterId: string | undefined) {
+  if (!submitterId || submitterId === actor.id) return false;
+  const theirs = await campPosts(submitterId, camp);
+  const top = theirs.some((p) => p.appointmentCode === "GP_CDR");
+  const mine = actor.assignments.filter((a) => (top ? DTE_ROLES.includes(a.role) && a.level === "DIRECTORATE" && a.anchor.directorateId === camp.directorateId : groupPost(a) && a.anchor.groupId === camp.groupId));
+  return mine.length > 0 && (!theirs.length || outranks(mine, theirs));
+}
 export async function plannableUnits(actor: Actor) {
   const units = actor.assignments.filter(unitPost).map((a) => a.anchor.unitId!);
   const groups = actor.assignments.filter(groupPost).map((a) => a.anchor.groupId!);
@@ -108,10 +134,11 @@ export async function createCamp(actor: Actor, raw: unknown) {
     .catch(unique);
 }
 // Loads a camp for a change by a planner at the version they saw.
-async function forChange(tx: Tx, actor: Actor, id: string, v: number) {
+async function forChange(tx: Tx, actor: Actor, id: string, v: number, senior = false) {
   const camp = await tx.camp.findFirst({ where: { AND: [{ id }, campScope(actor)] } });
   if (!camp) throw new AppError(404, "Camp not found.");
   if (!handles(actor, camp)) throw new AppError(403, "Only the host unit or its group can change this camp.");
+  if (senior && !(await changes(actor, camp))) throw new AppError(403, "Only the officer who planned this camp or someone senior to them can change it.");
   if (camp.version !== v) throw new AppError(409, "This camp changed. Refresh and try again.");
   return camp;
 }
@@ -125,7 +152,7 @@ export async function updateCamp(actor: Actor, id: string, raw: unknown) {
   const input = editInput.parse(raw);
   return db
     .$transaction(async (tx) => {
-      const camp = await forChange(tx, actor, id, input.version);
+      const camp = await forChange(tx, actor, id, input.version, true);
       if (!upcoming(camp)) throw new AppError(409, "A camp can be changed only before it starts.");
       if (input.start <= istDate()) throw new AppError(400, "Plan a camp that starts after today.");
       const trainingYear = await checked(input, { id: camp.unitId, groupId: camp.groupId });
@@ -140,7 +167,7 @@ export async function updateCamp(actor: Actor, id: string, raw: unknown) {
 export async function cancelCamp(actor: Actor, id: string, raw: unknown) {
   const input = cancelInput.parse(raw);
   return db.$transaction(async (tx) => {
-    const camp = await forChange(tx, actor, id, input.version);
+    const camp = await forChange(tx, actor, id, input.version, true);
     if (!upcoming(camp)) throw new AppError(409, "A camp can be cancelled only before it starts.");
     await bump(tx, camp, { status: "CANCELLED", cancelReason: input.reason });
     await audit(tx, actor.id, "camp.cancelled", id, { reason: input.reason });
@@ -182,11 +209,11 @@ export async function decideReport(actor: Actor, id: string, raw: unknown) {
   return db.$transaction(async (tx) => {
     const camp = await tx.camp.findFirst({ where: { AND: [{ id }, campScope(actor)] } });
     if (!camp) throw new AppError(404, "Camp not found.");
-    if (!reviews(actor, camp)) throw new AppError(403, "Only the Group Commander or group staff of this group can review the report.");
     if (camp.version !== input.version) throw new AppError(409, "This camp changed. Refresh and try again.");
     if (camp.reportStatus !== "SUBMITTED") throw new AppError(409, "There is no submitted report to review.");
     const last = await tx.campReportSubmission.findFirstOrThrow({ where: { campId: id }, orderBy: { round: "desc" } });
     if (last.submittedById === actor.id) throw new AppError(403, "You cannot review a report you submitted.");
+    if (!(await reviews(actor, camp, last.submittedById))) throw new AppError(403, "Only an officer senior to the one who submitted the report can review it.");
     const decision = input.decision === "ACCEPT" ? "ACCEPTED" : "RETURNED";
     await tx.campReportSubmission.update({ where: { id: last.id }, data: { decision, decidedById: actor.id, decidedAt: new Date(), remarks: input.remarks } });
     await bump(tx, camp, { reportStatus: decision });
@@ -258,15 +285,16 @@ export async function getCamp(actor: Actor, id: string) {
   const people = new Map((await db.user.findMany({ where: { id: { in: [...new Set(events.map((e) => e.actorId))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const last = rounds.at(-1);
   const host = handles(actor, row);
+  const [mayChange, mayReview] = await Promise.all([changes(actor, row), row.reportStatus === "SUBMITTED" ? reviews(actor, row, last?.submittedById) : false]);
   return {
     ...camp,
     files,
     history: events.map((e) => ({ action: e.action.slice(5), by: people.get(e.actorId) ?? "", at: e.createdAt, remarks: (e.details as { remarks?: string; reason?: string }).remarks ?? (e.details as { reason?: string }).reason ?? "" })),
     rounds: rounds.map((r) => ({ round: r.round, at: r.createdAt, decision: r.decision, remarks: r.remarks })),
     returnRemarks: camp.report === "RETURNED" ? (last?.remarks ?? "") : "",
-    canEdit: host && camp.state === "UPCOMING",
+    canEdit: mayChange && camp.state === "UPCOMING",
     canReport: host && camp.state === "COMPLETED" && ["NONE", "RETURNED"].includes(row.reportStatus),
-    canReview: reviews(actor, row) && row.reportStatus === "SUBMITTED" && last?.submittedById !== actor.id,
+    canReview: mayReview,
   };
 }
 // Strength per unit for the year: camps hosted, seats allocated and attended
