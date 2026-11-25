@@ -3,7 +3,7 @@ import { useT } from "./i18n-client";
 // Placeholders shown while a dashboard page loads. They mirror the shape of
 // the page so nothing jumps when the content arrives.
 const Bar = ({ className }: { className: string }) => <div className={`skeleton ${className}`} />;
-type Page = "visits" | "institutions" | "refreshment" | "pending" | "registrations" | "officers" | "movement";
+type Page = "visits" | "institutions" | "refreshment" | "pending" | "registrations" | "officers" | "movement" | "camps";
 export function ListSkeleton({ page }: { page: Page }) {
   const t = useT();
   return (

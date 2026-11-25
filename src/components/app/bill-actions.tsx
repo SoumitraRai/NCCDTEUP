@@ -113,7 +113,7 @@ export function PaymentForm({ kind, id, version, duePaise }: { kind: string; id:
   );
 }
 const types: Record<string, string> = { "image/jpeg": "image/jpeg", "image/png": "image/png", "application/pdf": "application/pdf" };
-export function EvidenceUpload({ resourceId, institutionId, purpose, label }: { resourceId: string; institutionId: string; purpose: "BILL" | "DOCUMENT" | "PHOTO"; label: string }) {
+export function EvidenceUpload({ resourceId, institutionId, purpose, label, resourceType = "claim" }: { resourceId: string; institutionId: string; purpose: "BILL" | "DOCUMENT" | "PHOTO" | "REPORT"; label: string; resourceType?: "claim" | "camp" }) {
   const { busy, error, run } = useAction();
   const t = useT().actions;
   const input = useRef<HTMLInputElement>(null);
@@ -133,7 +133,7 @@ export function EvidenceUpload({ resourceId, institutionId, purpose, label }: { 
           run("upload", async () => {
             if (!types[file.type]) throw new Error(t.fileType);
             if (file.size > 10 * 1024 * 1024) throw new Error(t.fileSize);
-            const intent = await api<{ id: string }>("attachments/intent", "POST", { institutionId, resourceType: "claim", resourceId, declaredType: file.type, size: file.size, purpose });
+            const intent = await api<{ id: string }>("attachments/intent", "POST", { institutionId, resourceType, resourceId, declaredType: file.type, size: file.size, purpose });
             const res = await fetch(`/api/private/attachments/${intent.id}`, { method: "PUT", body: file, headers: { "Content-Type": file.type, ...localeHeader() } });
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? t.uploadFailed);
           });
